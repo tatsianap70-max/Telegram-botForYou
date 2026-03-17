@@ -1,0 +1,63 @@
+{
+    // Конфигурации запуска приложения (VS Code → Run and Debug).
+    //
+    // Как запускать:
+    //   1) Откройте панель Run and Debug (слева) или меню Run.
+    //   2) В выпадающем списке выберите конфигурацию:
+    //      - "Bot For You" — с hot reload (перезапуск при изменении кода)
+    //      - "Bot For You (без hot reload)" — без автоперезапуска
+    //   3) Нажмите нужную комбинацию:
+    //      - Windows / Linux:
+    //          F5 — запуск с отладкой (breakpoints)
+    //          Ctrl+F5 — запуск без отладки
+    //      - macOS:
+    //          F5 — запуск с отладкой (иногда нужно fn+F5)
+    //          Ctrl+F5 — запуск без отладки (иногда нужно fn+Ctrl+F5)
+    //
+    // Что запускается:
+    //   - FastAPI (uvicorn) на http://localhost:8000
+    //   - Telegram-бот в режиме polling (фоновая задача)
+    //
+    // Hot reload ("Bot For You"):
+    //   - --reload-dir src — следим только за папкой src
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Bot For You",
+            "type": "debugpy",
+            "request": "launch",
+            // uvicorn — ASGI-сервер для FastAPI
+            // src.main:app — путь к FastAPI-приложению (файл src/main.py, переменная app)
+            // --reload — автоматический перезапуск при изменении файлов
+            // --host 0.0.0.0 — доступ с любого IP (нужно для Docker/production)
+            // --port 8000 — порт сервера
+            "module": "uvicorn",
+            "args": [
+                "src.main:app",
+                "--reload",
+                "--reload-dir", "src",
+                "--host", "0.0.0.0",
+                "--port", "8000"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            // true — отладчик останавливается только в вашем коде
+            // false — можно заходить в библиотеки (aiogram, fastapi и т.д.)
+            "justMyCode": true
+        },
+        {
+            "name": "Bot For You (без hot reload)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "src.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8000"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": true
+        }
+    ]
+}

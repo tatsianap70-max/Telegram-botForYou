@@ -113,3 +113,25 @@ class TestAppSettings:
 
         # Assert
         assert settings.domain == original_domain
+
+    def test_is_production_with_force_polling_returns_false(self) -> None:
+        """Проверить, что force_polling отключает production mode."""
+        # Arrange
+        settings = AppSettings(
+            domain="https://example.com",
+            force_polling=True,
+        )
+
+        # Act
+        result = settings.is_production
+
+        # Assert
+        assert result is False
+
+    def test_force_polling_default_value_is_false(self) -> None:
+        """Проверить значение force_polling по умолчанию."""
+        # Arrange & Act
+        settings = AppSettings()
+
+        # Assert
+        assert settings.force_polling is False

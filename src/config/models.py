@@ -354,14 +354,22 @@ class AppSettings(BaseModel):
     #   - Telegram должен иметь доступ к этому домену
     domain: str | None = None
 
+    # Принудительно включить polling mode даже при заданном домене.
+    # Нужен как аварийный флаг для окружений, где webhook временно недоступен.
+    #
+    # Пример:
+    #   APP__FORCE_POLLING=true
+    force_polling: bool = False
+
     @property
     def is_production(self) -> bool:
         """Проверить, работает ли приложение в production mode.
 
         Production mode включается автоматически при наличии домена.
         В production используется webhook вместо polling.
+        Если включён force_polling — остаёмся в polling mode.
         """
-        return self.domain is not None
+        return self.domain is not None and not self.force_polling
 
 
 class ChannelSettings(BaseModel):

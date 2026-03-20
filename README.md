@@ -135,7 +135,7 @@ Bot For You поддерживает AI-провайдеры с OpenAI-совм�
 Российский сервис с доступом к GPT-5, Gemini, DeepSeek и другим моделям. Работает без VPN, оплата в рублях.
 
 ```env
-AI__ROUTERAI__API_KEY=ваш_ключ
+AI__ROUTERAI_API_KEY=ваш_ключ
 ```
 
 Получить ключ: [routerai.ru](https://routerai.ru) → Личный кабинет → API-ключи
@@ -145,7 +145,7 @@ AI__ROUTERAI__API_KEY=ваш_ключ
 Агрегатор 100+ моделей для международного использования.
 
 ```env
-AI__OPENROUTER__API_KEY=ваш_ключ
+AI__OPENROUTER_API_KEY=ваш_ключ
 ```
 
 Получить ключ: [openrouter.ai/keys](https://openrouter.ai/keys)

@@ -14,7 +14,7 @@
 - При обновлении версии документов запрашивает повторное согласие
 """
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import FSInputFile, Message, ReplyKeyboardRemove
 
@@ -250,3 +250,14 @@ async def cmd_start(message: Message, l10n: Localization) -> None:
     # Если начислен реферальный бонус — уведомляем пользователя
     if referral_bonus > 0:
         await message.answer(l10n.get("referral_invitee_bonus", amount=referral_bonus))
+
+
+@router.message(F.text.casefold() == "старт")
+@router.message(F.text.casefold() == "start")
+async def cmd_start_alias(message: Message, l10n: Localization) -> None:
+    """Обработать текстовый алиас команды /start.
+
+    Пользователи часто пишут "Старт" вручную вместо слеш-команды.
+    Направляем такой ввод в основной обработчик /start.
+    """
+    await cmd_start(message, l10n)

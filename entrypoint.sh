@@ -24,7 +24,9 @@
 # ==============================================================================
 
 # При ошибке в любой команде — остановить скрипт
-set -e
+# pipefail нужен, чтобы ошибки в первой части пайпа (например alembic | tee)
+# не терялись и корректно приводили к падению деплоя.
+set -eo pipefail
 
 # ==============================================================================
 # ФУНКЦИЯ ЭКРАНИРОВАНИЯ HTML
@@ -234,11 +236,25 @@ MIGRATION_TIMEOUT=120
 # Временный файл для сохранения вывода
 migration_log=$(mktemp)
 
-# Запускаем миграции с таймаутом и выводом в реальном времени
-# timeout — прерывает команду если она выполняется дольше указанного времени
-# |& tee — показывает вывод в терминале И сохраняет в файл
-if ! timeout ${MIGRATION_TIMEOUT} alembic upgrade head |& tee "$migration_log"; then
-    exit_code=$?
+# Формируем команду миграции.
+# На некоторых окружениях (например Render native runtime) утилиты timeout может не быть.
+# В таком случае запускаем миграции без timeout, чтобы не падать с "command not found".
+if command -v timeout > /dev/null 2>&1; then
+    migration_cmd=(timeout "${MIGRATION_TIMEOUT}" alembic upgrade head)
+else
+    echo "⚠️  Утилита timeout не найдена — запускаем миграции без ограничения по времени"
+    migration_cmd=(alembic upgrade head)
+fi
+
+# Запускаем миграции и сохраняем лог.
+# set +e нужен временно, чтобы вручную обработать код возврата.
+set +e
+"${migration_cmd[@]}" |& tee "$migration_log"
+migration_exit=${PIPESTATUS[0]}
+set -e
+
+if [ "$migration_exit" -ne 0 ]; then
+    exit_code=$migration_exit
     echo ""
 
     # Код 124 означает, что timeout прервал команду
@@ -327,4 +343,6 @@ echo ""
 # ==============================================================================
 echo "=== Этап 3: Запуск приложения ==="
 echo "Запускаем uvicorn..."
-exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips="*"
+# Для Render порт приходит в переменной PORT (обычно 10000).
+# Для локального запуска оставляем fallback 8000.
+exec python -m uvicorn src.main:app --host 0.0.0.0 --port "${PORT:-8000}" --proxy-headers --forwarded-allow-ips="*"

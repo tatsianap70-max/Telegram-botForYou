@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -52,6 +53,10 @@ SUPPORTED_GENERATION_TYPES = frozenset(
 # Таймаут по умолчанию для HTTP-клиента (в секундах).
 # Используется если AIService не передал таймаут из конфигурации.
 DEFAULT_TIMEOUT_SECONDS = 60.0
+
+# Повторные попытки для временных сетевых ошибок.
+# Используются только когда ошибка помечена как retryable.
+RETRY_DELAYS_SECONDS = (1.0, 2.0)
 
 
 class OpenAIAdapter(BaseProviderAdapter):
@@ -190,42 +195,95 @@ class OpenAIAdapter(BaseProviderAdapter):
                 is_retryable=False,
             )
 
-        try:
-            if generation_type == GenerationType.CHAT:
-                return await self._generate_chat(model_id, prompt, **kwargs)
-            elif generation_type == GenerationType.IMAGE:
-                return await self._generate_image(model_id, prompt, **kwargs)
-            elif generation_type == GenerationType.IMAGE_EDIT:
-                return await self._generate_image_edit(model_id, prompt, **kwargs)
-            elif generation_type == GenerationType.TTS:
-                return await self._generate_tts(model_id, prompt, **kwargs)
-            elif generation_type == GenerationType.STT:
-                return await self._generate_stt(model_id, **kwargs)
-            else:
-                raise GenerationError(
-                    f"Неизвестный тип генерации: {generation_type}",
+        max_attempts = len(RETRY_DELAYS_SECONDS) + 1
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await self._dispatch_generation(
+                    model_id=model_id,
+                    prompt=prompt,
+                    generation_type=generation_type,
+                    **kwargs,
+                )
+            except GenerationError as e:
+                # Для временных сетевых/серверных ошибок делаем ограниченный retry.
+                if e.is_retryable and attempt < max_attempts:
+                    delay = RETRY_DELAYS_SECONDS[attempt - 1]
+                    logger.warning(
+                        "Временная ошибка OpenAI API, повтор через %.1fс "
+                        "(attempt %d/%d, model=%s, type=%s): %s",
+                        delay,
+                        attempt,
+                        max_attempts,
+                        model_id,
+                        generation_type.value,
+                        e.message,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+            except Exception as e:
+                # Оборачиваем неожиданные ошибки.
+                logger.exception(
+                    "Ошибка OpenAI API (model=%s, generation_type=%s)",
+                    model_id,
+                    generation_type,
+                )
+                wrapped = GenerationError(
+                    str(e),
                     provider=self.provider_name,
                     model_id=model_id,
-                    is_retryable=False,
+                    is_retryable=self._is_retryable_error(e),
+                    original_error=e,
                 )
-        except GenerationError:
-            # Пробрасываем наши ошибки без изменений
-            raise
-        except Exception as e:
-            # Оборачиваем неожиданные ошибки
-            # logging.exception() автоматически включает traceback
-            logger.exception(
-                "Ошибка OpenAI API (model=%s, generation_type=%s)",
-                model_id,
-                generation_type,
-            )
-            raise GenerationError(
-                str(e),
-                provider=self.provider_name,
-                model_id=model_id,
-                is_retryable=self._is_retryable_error(e),
-                original_error=e,
-            ) from e
+                if wrapped.is_retryable and attempt < max_attempts:
+                    delay = RETRY_DELAYS_SECONDS[attempt - 1]
+                    logger.warning(
+                        "Временная ошибка OpenAI API, повтор через %.1fс "
+                        "(attempt %d/%d, model=%s, type=%s): %s",
+                        delay,
+                        attempt,
+                        max_attempts,
+                        model_id,
+                        generation_type.value,
+                        wrapped.message,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise wrapped from e
+
+        # Логически недостижимо, но оставлено для mypy/linters.
+        raise GenerationError(
+            "Не удалось выполнить генерацию после повторных попыток.",
+            provider=self.provider_name,
+            model_id=model_id,
+            is_retryable=False,
+        )
+
+    async def _dispatch_generation(
+        self,
+        model_id: str,
+        prompt: str,
+        generation_type: GenerationType,
+        **kwargs: Any,
+    ) -> GenerationResult:
+        """Маршрутизировать запрос в конкретный метод генерации."""
+        if generation_type == GenerationType.CHAT:
+            return await self._generate_chat(model_id, prompt, **kwargs)
+        if generation_type == GenerationType.IMAGE:
+            return await self._generate_image(model_id, prompt, **kwargs)
+        if generation_type == GenerationType.IMAGE_EDIT:
+            return await self._generate_image_edit(model_id, prompt, **kwargs)
+        if generation_type == GenerationType.TTS:
+            return await self._generate_tts(model_id, prompt, **kwargs)
+        if generation_type == GenerationType.STT:
+            return await self._generate_stt(model_id, **kwargs)
+
+        raise GenerationError(
+            f"Неизвестный тип генерации: {generation_type}",
+            provider=self.provider_name,
+            model_id=model_id,
+            is_retryable=False,
+        )
 
     async def _generate_chat(
         self,
@@ -716,7 +774,7 @@ class OpenAIAdapter(BaseProviderAdapter):
             model=model_id,
             messages=messages,
             max_tokens=max_tokens,
-            extra_body=extra_body if extra_body else None,
+            extra_body=extra_body or None,
         )
 
         # Извлекаем изображение из ответа.

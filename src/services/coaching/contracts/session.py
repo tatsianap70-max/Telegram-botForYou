@@ -30,6 +30,10 @@ class SessionState(BaseModel):
     contentful_message_count: int = 0
     insight_count: int = 0
     premium_trigger_shown: bool = False
+    recent_step_types: list[str] = Field(default_factory=list)
+    no_progress_turns: int = 0
+    low_engagement_turns: int = 0
+    load_limiter_active: bool = False
 
     # Лимит глубокой premium-сессии: максимум одна в день.
     deep_session_allowed_today: bool = True

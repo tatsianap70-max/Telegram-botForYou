@@ -1,7 +1,6 @@
 ﻿"""Тесты для изолированного anti-loop policy-модуля (усиленная версия)."""
 
 from pathlib import Path
-from typing import cast
 
 from src.services.coaching.anti_loop import (
     RecoveryStrategy,
@@ -321,7 +320,7 @@ def test_missing_state_fields_do_not_break_evaluation() -> None:
     del state.__dict__["no_progress_turns"]
 
     decision = evaluate_anti_loop(
-        cast("SessionState", state),
+        state,
         ["Я повторяю ту же мысль.", "Я повторяю ту же мысль."],
     )
 

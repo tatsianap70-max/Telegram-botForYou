@@ -29,6 +29,7 @@ from src.db.repositories import MessageRepository
 from src.providers.ai.base import GenerationResult, GenerationStatus
 from src.services.ai_service import AIService
 from src.services.billing_service import GenerationCost
+from src.services.coaching.safety_layer import build_crisis_response
 from src.utils.i18n import Localization
 
 
@@ -747,6 +748,61 @@ class TestHandleUserMessage:
         has_error = "error" in error_text
         has_key = "chat_generation_error" in call_args[0][0]
         assert has_error or has_key
+
+    @pytest.mark.asyncio
+    async def test_handle_user_message_interrupts_on_crisis_before_ai(
+        self,
+        mock_message: Message,
+        mock_fsm_context: FSMContext,
+        mock_l10n: Localization,
+        mock_ai_service: AIService,
+    ) -> None:
+        """Проверить ранний crisis interrupt до AI-генерации."""
+        mock_message.text = "хочу умереть"
+
+        await handle_user_message(
+            mock_message,
+            mock_fsm_context,
+            mock_l10n,
+            mock_ai_service,
+        )
+
+        mock_ai_service.generate.assert_not_called()
+        mock_message.answer.assert_called_once_with(build_crisis_response())
+        assert mock_fsm_context.update_data.await_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_user_message_persists_domain_pipeline_state(
+        self,
+        mock_message: Message,
+        mock_fsm_context: FSMContext,
+        mock_l10n: Localization,
+        mock_ai_service: AIService,
+        db_session: AsyncSession,
+        test_user: User,
+        session_factory: Callable[[], AbstractAsyncContextManager[AsyncSession]],
+    ) -> None:
+        """Проверить сохранение доменного состояния pipeline в FSM."""
+        processing_msg = MagicMock()
+        processing_msg.delete = AsyncMock()
+        processing_msg.edit_text = AsyncMock()
+        mock_message.answer = AsyncMock(return_value=processing_msg)
+
+        await handle_user_message(
+            mock_message,
+            mock_fsm_context,
+            mock_l10n,
+            mock_ai_service,
+            session_factory,
+        )
+
+        assert mock_fsm_context.update_data.await_count >= 1
+        call_args = mock_fsm_context.update_data.call_args
+        payload = call_args.args[0] if call_args.args else call_args.kwargs
+        assert isinstance(payload, dict)
+        assert "coaching_session_state" in payload
+        assert "coaching_recent_user_turns" in payload
+        assert "coaching_last_response_plan" in payload
 
 
 class TestTextNotCommandFilter:

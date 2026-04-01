@@ -16,7 +16,7 @@
 # Shows a list of main available bot commands.
 # Some commands may be disabled in config.yaml.
 start_message: |
-  👋 <b>Hello! I'm an AI generation bot.</b>
+  👋 <b>Hello! I'm a bot for AI generation.</b>
 
   📋 <b>Available commands:</b>
 
@@ -29,6 +29,10 @@ start_message: |
   ❓ /help — help
 
   💡 Start with /chatgpt or /imagine!
+
+# Demo greeting key used by i18n examples/tests
+# {name} — user name
+hello_user: "Hello, {name}!"
 
 # Message when selecting /language command
 language_command: "Choose your interface language:"
@@ -92,12 +96,16 @@ generation_unexpected_error: |
   ❌ An unexpected error occurred during generation.
   Please try again or contact support.
 
+# Generation cooldown notification
+# {seconds} — how many seconds remain
+generation_cooldown: "⏳ Please wait {seconds} sec before sending the next request."
+
 # Canonical crisis response for handler-level localization
 crisis_support_v1: |
-  I'm very sorry that things feel this hard right now.
+  I'm very sorry that this is so hard right now.
   If there is a risk to your life, your safety, or the safety of another person, I can't continue this conversation in the usual format.
-  Right now, it's important to seek urgent help in your country as soon as possible: emergency services, a trusted person nearby, or a specialist who can be with you in real time.
-  When the situation becomes safer, you can return here later.
+  Right now, it's important to seek urgent help in your country as soon as possible: emergency services, someone close to you nearby, or a specialist who can be with you in real time.
+  When the situation is safer, you can return here later.
 
 # Callback data not found
 error_callback_data: "❌ Error: data not found"
@@ -135,23 +143,23 @@ error_test_triggered: |
 
 # Model selection message for chat
 chatgpt_choose_model: |
-  🤖 <b>Choose a model for dialogue:</b>
+  🤖 <b>Choose a model for chat:</b>
 
-  After selecting, you'll be able to chat with AI.
-  All previous messages will be considered in context.
+  After selection, you can chat with AI.
+  Previous messages will be used as context.
 
-  💡 Use /clear to clear the dialogue history.
+  💡 Use /clear to reset the chat history.
 
 # Model selection confirmation
 # {model_key} — selected model key
 chatgpt_model_selected: |
   ✅ Model selected: <b>{model_key}</b>
 
-  Now send messages and AI will respond.
-  The entire dialogue history is saved and considered in responses.
+  Now send a message and AI will reply.
+  Chat history is saved and used in responses.
 
-  🔄 To change model use /chatgpt
-  🗑 To clear history use /clear
+  🔄 To change the model, use /chatgpt
+  🗑 To clear history, use /clear
 
 # Model not selected error
 chatgpt_model_not_selected: "❌ Error: model not selected. Use /chatgpt to start."
@@ -236,6 +244,17 @@ imagine_generation_error: |
   ❌ Generation error: {error}
 
   Please try again or choose another model via /imagine.
+
+# Alias for generation_type="image" (used in base.py)
+image_generation_error: |
+  ❌ Generation error: {error}
+
+  Please try again or choose another model via /imagine.
+
+# Error while sending generated image to chat
+imagine_send_error: |
+  ❌ Failed to send the generated image.
+  Please try again.
 
 # Unexpected error when generating image
 imagine_unexpected_error: |
@@ -507,6 +526,21 @@ buy_invoice_description: "Top up balance with {tokens} tokens"
 # {tokens} — number of tokens per month
 buy_invoice_subscription_description: "Monthly subscription — {tokens} tokens/month"
 
+# Subscription payment link for Telegram Stars
+# {tariff_name} — tariff name
+# {tokens} — tokens per month
+# {stars} — price in Stars
+# {url} — payment URL
+buy_subscription_invoice_link: |
+  💎 <b>Subscription: {tariff_name}</b>
+
+  Tokens per month: {tokens} 💎
+  Price: {stars} ⭐
+
+  👉 <a href="{url}">Pay for subscription</a>
+
+  The subscription renews automatically every 30 days.
+
 # Successful payment (one-time purchase)
 # {tokens} — number of tokens credited
 buy_success: |
@@ -611,7 +645,7 @@ help_message_with_contact: |
 
   📞 <b>Support:</b> {contact}
 
-  If you have any questions or issues — feel free to reach out!
+  If something isn't clear or not working, contact support.
 
 # Message without support contact (if support.contact is not set)
 help_message_no_contact: |
@@ -775,9 +809,9 @@ legal_not_configured: |
 channel_subscription_required: |
   ⚠️ <b>Subscription Required</b>
 
-  To use this bot, you need to subscribe to our channel.
+  To use the bot, please subscribe to our channel.
 
-  After subscribing, please click the "Check subscription" button.
+  After subscribing, tap the "Check subscription" button.
 
 # Text for the button to go to the channel
 channel_subscription_button: "📢 Subscribe to Channel"
@@ -789,12 +823,12 @@ channel_subscription_check_button: "🔄 Check subscription"
 channel_subscription_not_subscribed: |
   ❌ You are not subscribed to the channel yet.
 
-  Please subscribe to the channel and click the check button again.
+  Please subscribe to the channel and tap the check button again.
 
 # Message after successful subscription
 # Shown when user subscribed and clicked "Check subscription"
 channel_subscription_thanks: |
   ✅ Thank you for subscribing!
 
-  Now you can use the bot.
+  Now you can continue in the bot.
   Press /start to begin.

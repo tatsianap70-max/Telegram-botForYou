@@ -775,7 +775,16 @@ legal_acceptance_request: |
   • <b>Privacy Policy</b> — how we handle your data
   • <b>Terms of Service</b> — conditions for using the service
 
+  This bot is intended for users 18+.
+  This bot is a tool for reflection and understanding your situation. It is not medical or professional advice.
+
   By clicking "I Accept the Terms", you confirm that you have read and agree to these documents.
+
+# 18+ notice
+legal_age_notice: "This bot is intended for users 18+."
+
+# Disclaimer: not medical or professional advice
+legal_disclaimer: "This bot is a tool for reflection and understanding your situation. It is not medical or professional advice."
 
 # Notification after clicking "Accept" (popup)
 legal_accepted_notification: "✅ Thank you! Terms accepted."

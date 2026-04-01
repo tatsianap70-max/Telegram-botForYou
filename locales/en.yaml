@@ -30,6 +30,9 @@ start_message: |
 
   💡 Start with /chatgpt or /imagine!
 
+# Start-gate message: user tries to continue before /start
+onboarding_start_required: "Please start with /start before continuing."
+
 # Demo greeting key used by i18n examples/tests
 # {name} — user name
 hello_user: "Hello, {name}!"

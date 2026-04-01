@@ -20,6 +20,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, User
 
 from src.bot.handlers.start import (
@@ -51,6 +52,14 @@ def mock_message() -> MagicMock:
     message.answer = AsyncMock()
     message.answer_photo = AsyncMock()
     return message
+
+
+@pytest.fixture
+def mock_fsm_context() -> FSMContext:
+    """Мок FSMContext для проверки флагов onboarding."""
+    context = MagicMock(spec=FSMContext)
+    context.update_data = AsyncMock()
+    return context
 
 
 @pytest.fixture
@@ -988,3 +997,43 @@ async def test_cmd_start_does_not_process_referral_for_existing_user(
 
     # process_referral НЕ должен быть вызван для существующего пользователя
     mock_referral.process_referral.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_sets_onboarding_completed_flag(
+    mock_message: MagicMock,
+    mock_l10n_ru: MagicMock,
+    mock_fsm_context: FSMContext,
+) -> None:
+    """Тест: /start выставляет onboarding_completed после показа welcome."""
+    mock_legal_config = MagicMock()
+    mock_legal_config.enabled = False
+
+    with (
+        patch("src.bot.handlers.start.DatabaseSession") as mock_session_cls,
+        patch("src.bot.handlers.start.UserRepository") as mock_repo_cls,
+        patch("src.bot.handlers.start._detect_user_language", return_value="ru"),
+        patch("src.bot.handlers.start.create_billing_service") as mock_billing_cls,
+        patch("src.bot.handlers.start.WELCOME_IMAGE") as mock_welcome_image,
+        patch("src.bot.handlers.start.yaml_config") as mock_yaml_config,
+    ):
+        mock_yaml_config.legal = mock_legal_config
+
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__.return_value = mock_session
+
+        mock_repo = MagicMock()
+        mock_repo.get_or_create = AsyncMock(return_value=(MagicMock(spec=DbUser), True))
+        mock_repo_cls.return_value = mock_repo
+
+        mock_billing = MagicMock()
+        mock_billing.grant_registration_bonus = AsyncMock(return_value=0)
+        mock_billing_cls.return_value = mock_billing
+
+        mock_welcome_image.exists.return_value = False
+
+        await cmd_start(mock_message, mock_l10n_ru, mock_fsm_context)
+
+    mock_fsm_context.update_data.assert_called_once_with(
+        {"onboarding_completed": True}
+    )

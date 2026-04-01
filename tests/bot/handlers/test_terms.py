@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, User
 
 from src.bot.handlers.terms import (
@@ -70,6 +71,14 @@ def mock_callback() -> MagicMock:
     callback.answer = AsyncMock()
     callback.data = "legal:accept"
     return callback
+
+
+@pytest.fixture
+def mock_fsm_context() -> FSMContext:
+    """Мок FSMContext для проверки установки onboarding-флага."""
+    context = MagicMock(spec=FSMContext)
+    context.update_data = AsyncMock()
+    return context
 
 
 @pytest.fixture
@@ -302,6 +311,53 @@ async def test_callback_accept_terms_saves_acceptance(
 
     # Проверяем что сообщение обновлено
     mock_callback.message.edit_text.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_callback_accept_terms_sets_onboarding_completed_flag(
+    mock_callback: MagicMock,
+    mock_l10n_ru: MagicMock,
+    mock_fsm_context: FSMContext,
+) -> None:
+    """Тест: после принятия условий ставится onboarding_completed=True."""
+    with (
+        patch("src.bot.handlers.terms.yaml_config") as mock_config,
+        patch("src.bot.handlers.terms.DatabaseSession") as mock_session_cls,
+        patch("src.bot.handlers.terms.UserRepository") as mock_repo_cls,
+        patch("src.bot.handlers.terms.create_billing_service") as mock_billing_cls,
+        patch("src.bot.handlers.terms.WELCOME_IMAGE") as mock_welcome_image,
+    ):
+        mock_legal = MagicMock()
+        mock_legal.version = "1.0"
+        mock_config.legal = mock_legal
+
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__.return_value = mock_session
+
+        mock_user = MagicMock(spec=DbUser)
+        mock_user.balance = 0
+        mock_user.registration_bonus_granted = True
+        mock_repo = MagicMock()
+        mock_repo.get_by_telegram_id = AsyncMock(return_value=mock_user)
+        mock_repo.needs_terms_acceptance.return_value = True
+        mock_repo.accept_terms = AsyncMock()
+        mock_repo_cls.return_value = mock_repo
+
+        mock_billing = MagicMock()
+        mock_billing.grant_registration_bonus = AsyncMock(return_value=0)
+        mock_billing_cls.return_value = mock_billing
+
+        mock_welcome_image.exists.return_value = False
+
+        await callback_accept_terms(
+            mock_callback,
+            mock_l10n_ru,
+            mock_fsm_context,
+        )
+
+    mock_fsm_context.update_data.assert_called_once_with(
+        {"onboarding_completed": True}
+    )
 
 
 @pytest.mark.asyncio

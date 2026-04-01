@@ -54,6 +54,7 @@ ROLE_ASSISTANT = "assistant"
 COACHING_STATE_KEY = "coaching_session_state"
 COACHING_RECENT_TURNS_KEY = "coaching_recent_user_turns"
 COACHING_LAST_PLAN_KEY = "coaching_last_response_plan"
+ONBOARDING_COMPLETED_KEY = "onboarding_completed"
 
 
 async def _send_ai_response(message: Message, content: str) -> None:
@@ -216,6 +217,10 @@ async def handle_user_message(
         return
 
     state_data = await state.get_data()
+    if state_data.get(ONBOARDING_COMPLETED_KEY) is not True:
+        await message.answer(l10n.get("onboarding_start_required"))
+        return
+
     model_key = state_data.get("model_key")
     if not model_key:
         await message.answer(l10n.get("chatgpt_model_not_selected"))

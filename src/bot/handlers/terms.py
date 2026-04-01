@@ -15,6 +15,7 @@
 
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     BotCommand,
     CallbackQuery,
@@ -40,6 +41,14 @@ COMMAND = BotCommand(command="terms", description="Юридические док
 
 router = Router(name="terms")
 logger = get_logger(__name__)
+ONBOARDING_COMPLETED_KEY = "onboarding_completed"
+
+
+async def _mark_onboarding_completed(state: FSMContext | None) -> None:
+    """Отметить завершение входного слоя в FSM."""
+    if state is None:
+        return
+    await state.update_data({ONBOARDING_COMPLETED_KEY: True})
 
 
 @router.message(Command("terms"))
@@ -82,7 +91,11 @@ async def cmd_terms(message: Message, l10n: Localization) -> None:
 
 
 @router.callback_query(F.data == "legal:accept")
-async def callback_accept_terms(callback: CallbackQuery, l10n: Localization) -> None:
+async def callback_accept_terms(
+    callback: CallbackQuery,
+    l10n: Localization,
+    state: FSMContext | None = None,
+) -> None:
     """Обработать нажатие кнопки «Принимаю».
 
     Сохраняет согласие пользователя с юридическими документами:
@@ -122,6 +135,7 @@ async def callback_accept_terms(callback: CallbackQuery, l10n: Localization) -> 
             await callback.answer(l10n.get("legal_already_accepted"))
             # Удаляем клавиатуру, оставляем сообщение
             await callback.message.edit_reply_markup(reply_markup=None)
+            await _mark_onboarding_completed(state)
             return
 
         # Сохраняем согласие
@@ -165,6 +179,8 @@ async def callback_accept_terms(callback: CallbackQuery, l10n: Localization) -> 
         await callback.message.answer(
             l10n.get("billing_registration_bonus", amount=registration_bonus)
         )
+
+    await _mark_onboarding_completed(state)
 
 
 async def show_terms_acceptance_request(

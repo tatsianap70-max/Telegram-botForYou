@@ -16,6 +16,7 @@
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, Message, ReplyKeyboardRemove
 
 from src.bot.static import WELCOME_IMAGE
@@ -37,6 +38,14 @@ logger = get_logger(__name__)
 # Длина префикса команды "/start " для извлечения параметра
 # Telegram deep links: t.me/bot?start=promo → /start promo
 COMMAND_START_PREFIX_LENGTH = 7  # len("/start ") = 7
+ONBOARDING_COMPLETED_KEY = "onboarding_completed"
+
+
+async def _mark_onboarding_completed(state: FSMContext | None) -> None:
+    """Отметить, что пользователь прошёл входной слой."""
+    if state is None:
+        return
+    await state.update_data({ONBOARDING_COMPLETED_KEY: True})
 
 
 def _extract_start_param(message: Message) -> str | None:
@@ -98,7 +107,11 @@ def _detect_user_language(telegram_language_code: str | None) -> str:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, l10n: Localization) -> None:
+async def cmd_start(
+    message: Message,
+    l10n: Localization,
+    state: FSMContext | None = None,
+) -> None:
     """Обработать команду /start.
 
     При первом запуске:
@@ -251,13 +264,19 @@ async def cmd_start(message: Message, l10n: Localization) -> None:
     if referral_bonus > 0:
         await message.answer(l10n.get("referral_invitee_bonus", amount=referral_bonus))
 
+    await _mark_onboarding_completed(state)
+
 
 @router.message(F.text.casefold() == "старт")
 @router.message(F.text.casefold() == "start")
-async def cmd_start_alias(message: Message, l10n: Localization) -> None:
+async def cmd_start_alias(
+    message: Message,
+    l10n: Localization,
+    state: FSMContext | None = None,
+) -> None:
     """Обработать текстовый алиас команды /start.
 
     Пользователи часто пишут "Старт" вручную вместо слеш-команды.
     Направляем такой ввод в основной обработчик /start.
     """
-    await cmd_start(message, l10n)
+    await cmd_start(message, l10n, state)

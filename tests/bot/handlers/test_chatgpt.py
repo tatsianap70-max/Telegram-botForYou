@@ -70,7 +70,9 @@ def mock_fsm_context() -> FSMContext:
     context = MagicMock(spec=FSMContext)
     context.set_state = AsyncMock()
     context.update_data = AsyncMock()
-    context.get_data = AsyncMock(return_value={"model_key": "gpt-4o"})
+    context.get_data = AsyncMock(
+        return_value={"model_key": "gpt-4o", "onboarding_completed": True}
+    )
     context.get_state = AsyncMock(return_value=ChatGPTStates.waiting_for_message)
     return context
 
@@ -130,6 +132,9 @@ def mock_l10n() -> Localization:
         "error_db_temporary": "❌ Временная ошибка БД.",
         "error_db_permanent": "❌ Ошибка при работе с базой данных.",
         "no_models_available": "❌ Модели недоступны",
+        "onboarding_start_required": (
+            "Перед началом работы лучше сначала открыть /start."
+        ),
         "crisis_support_v1": (
             "Мне очень жаль, что вам сейчас так тяжело. "
             "Если есть риск для вашей жизни, безопасности "
@@ -501,7 +506,9 @@ class TestHandleUserMessage:
     ) -> None:
         """Проверить обработку отсутствия model_key в FSM state."""
         # Arrange
-        mock_fsm_context.get_data = AsyncMock(return_value={})
+        mock_fsm_context.get_data = AsyncMock(
+            return_value={"onboarding_completed": True}
+        )
 
         # Act
         await handle_user_message(
@@ -512,6 +519,29 @@ class TestHandleUserMessage:
         mock_message.answer.assert_called_once()
         call_args = mock_message.answer.call_args
         assert "модель не выбрана" in call_args[0][0].lower()
+        mock_ai_service.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_user_message_blocks_without_onboarding(
+        self,
+        mock_message: Message,
+        mock_fsm_context: FSMContext,
+        mock_l10n: Localization,
+        mock_ai_service: AIService,
+    ) -> None:
+        """Проверить start-gate: без onboarding_completed flow не запускается."""
+        mock_fsm_context.get_data = AsyncMock(return_value={"model_key": "gpt-4o"})
+
+        await handle_user_message(
+            mock_message,
+            mock_fsm_context,
+            mock_l10n,
+            mock_ai_service,
+        )
+
+        mock_message.answer.assert_called_once()
+        answer_text = mock_message.answer.call_args.args[0].lower()
+        assert "/start" in answer_text
         mock_ai_service.generate.assert_not_called()
 
     @pytest.mark.asyncio

@@ -76,6 +76,10 @@ def mock_l10n_ru() -> MagicMock:
                 "/start — начать работу\n"
                 "/language — выбрать язык интерфейса"
             ),
+            "post_legal_onboarding_message": (
+                "🌿 Добро пожаловать.\n"
+                "Этот бот помогает спокойно разобрать одну ситуацию за раз."
+            ),
         }
         text = translations.get(key, key)
         if kwargs:
@@ -99,6 +103,10 @@ def mock_l10n_en() -> MagicMock:
                 "Available commands:\n"
                 "/start — start using the bot\n"
                 "/language — choose interface language"
+            ),
+            "post_legal_onboarding_message": (
+                "🌿 Welcome.\n"
+                "This bot helps you calmly work through one situation at a time."
             ),
         }
         text = translations.get(key, key)
@@ -374,8 +382,99 @@ async def test_cmd_start_sends_localized_message(
     # Проверяем что ответ с картинкой отправлен
     mock_message.answer_photo.assert_called_once()
 
-    # Проверяем что использовался правильный ключ локализации
-    mock_l10n_ru.get.assert_called_with("start_message")
+    requested_keys = [call.args[0] for call in mock_l10n_ru.get.call_args_list]
+    assert "post_legal_onboarding_message" in requested_keys
+    assert "start_message" not in requested_keys
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_new_user_shows_legal_request_before_onboarding(
+    mock_message: MagicMock,
+    mock_l10n_ru: MagicMock,
+) -> None:
+    """Тест: новый пользователь сначала получает legal request, без onboarding-экрана."""
+    from src.services.referral_service import ReferralResult
+
+    with (
+        patch("src.bot.handlers.start.DatabaseSession") as mock_session_cls,
+        patch("src.bot.handlers.start.UserRepository") as mock_repo_cls,
+        patch("src.bot.handlers.start._detect_user_language", return_value="ru"),
+        patch("src.bot.handlers.start.yaml_config") as mock_yaml_config,
+        patch("src.bot.handlers.start.create_referral_service") as mock_referral_cls,
+        patch(
+            "src.bot.handlers.terms.show_terms_acceptance_request", new=AsyncMock()
+        ) as mock_show_terms,
+    ):
+        mock_legal_config = MagicMock()
+        mock_legal_config.enabled = True
+        mock_legal_config.version = "1.0"
+        mock_legal_config.has_documents.return_value = True
+        mock_yaml_config.legal = mock_legal_config
+
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__.return_value = mock_session
+
+        mock_repo = MagicMock()
+        mock_repo.get_or_create = AsyncMock(return_value=(MagicMock(spec=DbUser), True))
+        mock_repo_cls.return_value = mock_repo
+
+        mock_referral = MagicMock()
+        mock_referral.process_referral = AsyncMock(
+            return_value=ReferralResult(success=False, error="no_ref")
+        )
+        mock_referral_cls.return_value = mock_referral
+
+        mock_show_terms.return_value = True
+
+        await cmd_start(mock_message, mock_l10n_ru)
+
+    mock_show_terms.assert_awaited_once_with(mock_message, mock_l10n_ru)
+    mock_message.answer_photo.assert_not_called()
+    mock_message.answer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cmd_start_existing_user_with_accepted_legal_uses_product_onboarding(
+    mock_message: MagicMock,
+    mock_l10n_ru: MagicMock,
+) -> None:
+    """Тест: существующий пользователь с уже принятыми условиями видит product onboarding."""
+    with (
+        patch("src.bot.handlers.start.DatabaseSession") as mock_session_cls,
+        patch("src.bot.handlers.start.UserRepository") as mock_repo_cls,
+        patch("src.bot.handlers.start._detect_user_language", return_value="ru"),
+        patch("src.bot.handlers.start.WELCOME_IMAGE") as mock_welcome_image,
+        patch("src.bot.handlers.start.yaml_config") as mock_yaml_config,
+        patch(
+            "src.bot.handlers.terms.show_terms_acceptance_request", new=AsyncMock()
+        ) as mock_show_terms,
+    ):
+        mock_legal_config = MagicMock()
+        mock_legal_config.enabled = True
+        mock_legal_config.version = "1.0"
+        mock_legal_config.has_documents.return_value = True
+        mock_yaml_config.legal = mock_legal_config
+
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__.return_value = mock_session
+
+        mock_user = MagicMock(spec=DbUser)
+        mock_repo = MagicMock()
+        mock_repo.get_or_create = AsyncMock(return_value=(mock_user, False))
+        mock_repo.update_profile = AsyncMock()
+        mock_repo.needs_terms_acceptance.return_value = False
+        mock_repo_cls.return_value = mock_repo
+
+        mock_welcome_image.exists.return_value = True
+
+        await cmd_start(mock_message, mock_l10n_ru)
+
+    mock_show_terms.assert_not_awaited()
+    mock_message.answer_photo.assert_called_once()
+
+    requested_keys = [call.args[0] for call in mock_l10n_ru.get.call_args_list]
+    assert "post_legal_onboarding_message" in requested_keys
+    assert "start_message" not in requested_keys
 
 
 @pytest.mark.asyncio
@@ -490,7 +589,7 @@ async def test_cmd_start_handles_message_without_user(
 
     # Должен отправить сообщение без создания пользователя
     message.answer.assert_called_once()
-    mock_l10n_ru.get.assert_called_with("start_message")
+    mock_l10n_ru.get.assert_called_with("post_legal_onboarding_message")
 
 
 @pytest.mark.asyncio

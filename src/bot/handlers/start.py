@@ -19,7 +19,10 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, Message, ReplyKeyboardRemove
 
-from src.bot.static import WELCOME_IMAGE
+from src.bot.handlers.terms import (
+    POST_LEGAL_ONBOARDING_IMAGE,
+    POST_LEGAL_ONBOARDING_TEXT_KEY,
+)
 from src.config.yaml_config import yaml_config
 from src.db.base import DatabaseSession
 from src.db.repositories.user_repo import UserRepository
@@ -39,6 +42,9 @@ logger = get_logger(__name__)
 # Telegram deep links: t.me/bot?start=promo → /start promo
 COMMAND_START_PREFIX_LENGTH = 7  # len("/start ") = 7
 ONBOARDING_COMPLETED_KEY = "onboarding_completed"
+# Оставляем имя WELCOME_IMAGE для обратной совместимости тестов / патчей.
+WELCOME_IMAGE = POST_LEGAL_ONBOARDING_IMAGE
+PRODUCT_ONBOARDING_TEXT_KEY = POST_LEGAL_ONBOARDING_TEXT_KEY
 
 
 async def _mark_onboarding_completed(state: FSMContext | None) -> None:
@@ -131,7 +137,7 @@ async def cmd_start(
     tg_user = message.from_user
     if not tg_user:
         # Теоретически невозможно для личных сообщений
-        await message.answer(l10n.get("start_message"))
+        await message.answer(l10n.get(PRODUCT_ONBOARDING_TEXT_KEY))
         return
 
     # Извлекаем start-параметр (для аналитики и рефералов)
@@ -245,12 +251,12 @@ async def cmd_start(
     if WELCOME_IMAGE.exists():
         await message.answer_photo(
             photo=FSInputFile(WELCOME_IMAGE),
-            caption=l10n.get("start_message"),
+            caption=l10n.get(PRODUCT_ONBOARDING_TEXT_KEY),
             reply_markup=ReplyKeyboardRemove(),
         )
     else:
         await message.answer(
-            l10n.get("start_message"),
+            l10n.get(PRODUCT_ONBOARDING_TEXT_KEY),
             reply_markup=ReplyKeyboardRemove(),
         )
 

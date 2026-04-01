@@ -62,6 +62,18 @@ async def _send_ai_response(message: Message, content: str) -> None:
     await send_long_message(message, content)
 
 
+def _resolve_crisis_response_text(
+    l10n: Localization,
+    template_key: str | None,
+) -> str:
+    """Получить локализованный crisis-текст с безопасным fallback."""
+    if template_key:
+        localized_text = l10n.get(template_key)
+        if localized_text and localized_text != template_key:
+            return localized_text
+    return build_crisis_response()
+
+
 def _create_default_coaching_state(user_id: int) -> SessionState:
     """Создать дефолтное состояние доменной сессии для пользователя."""
     return SessionState(
@@ -238,7 +250,11 @@ async def handle_user_message(
             anti_loop_decision=None,
             premium_decision=None,
         )
-        await message.answer(build_crisis_response())
+        crisis_text = _resolve_crisis_response_text(
+            l10n,
+            safety_decision.message_template_key,
+        )
+        await message.answer(crisis_text)
         await _persist_coaching_pipeline_state(
             state,
             coaching_state,

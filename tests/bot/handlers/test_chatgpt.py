@@ -130,6 +130,12 @@ def mock_l10n() -> Localization:
         "error_db_temporary": "❌ Временная ошибка БД.",
         "error_db_permanent": "❌ Ошибка при работе с базой данных.",
         "no_models_available": "❌ Модели недоступны",
+        "crisis_support_v1": (
+            "Мне очень жаль, что вам сейчас так тяжело. "
+            "Если есть риск для вашей жизни, безопасности "
+            "или безопасности другого человека, "
+            "я не продолжаю этот разговор в обычном формате."
+        ),
     }
 
     def get_translation(key: str, **kwargs: str) -> str:
@@ -768,8 +774,97 @@ class TestHandleUserMessage:
         )
 
         mock_ai_service.generate.assert_not_called()
-        mock_message.answer.assert_called_once_with(build_crisis_response())
+        mock_message.answer.assert_called_once()
+        answer_text = mock_message.answer.call_args.args[0]
+        assert isinstance(answer_text, str)
+        assert answer_text
         assert mock_fsm_context.update_data.await_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_handle_user_message_uses_ru_crisis_localized_text(
+        self,
+        mock_message: Message,
+        mock_fsm_context: FSMContext,
+        mock_l10n: Localization,
+        mock_ai_service: AIService,
+    ) -> None:
+        """Проверить RU crisis-текст через l10n key."""
+        mock_message.text = "хочу умереть"
+
+        await handle_user_message(
+            mock_message,
+            mock_fsm_context,
+            mock_l10n,
+            mock_ai_service,
+        )
+
+        expected_text = mock_l10n.get("crisis_support_v1")
+        mock_message.answer.assert_called_once_with(expected_text)
+        mock_ai_service.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_user_message_uses_en_crisis_localized_text(
+        self,
+        mock_message: Message,
+        mock_fsm_context: FSMContext,
+        mock_ai_service: AIService,
+    ) -> None:
+        """Проверить EN crisis-текст через l10n key."""
+        mock_message.text = "хочу умереть"
+
+        en_l10n = MagicMock(spec=Localization)
+        en_text = (
+            "I'm very sorry that things feel this hard right now. "
+            "If there is a risk to your life, your safety, "
+            "or the safety of another person, "
+            "I can't continue this conversation in the usual format."
+        )
+
+        def _en_get(key: str, **kwargs: str) -> str:
+            text = {"crisis_support_v1": en_text}.get(key, key)
+            if kwargs:
+                text = text.format(**kwargs)
+            return text
+
+        en_l10n.get = MagicMock(side_effect=_en_get)
+
+        await handle_user_message(
+            mock_message,
+            mock_fsm_context,
+            en_l10n,
+            mock_ai_service,
+        )
+
+        mock_message.answer.assert_called_once_with(en_text)
+        mock_ai_service.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_user_message_crisis_uses_fallback_when_key_missing(
+        self,
+        mock_message: Message,
+        mock_fsm_context: FSMContext,
+        mock_ai_service: AIService,
+    ) -> None:
+        """Проверить fallback на канонический текст при отсутствии l10n key."""
+        mock_message.text = "хочу умереть"
+
+        fallback_l10n = MagicMock(spec=Localization)
+
+        def _fallback_get(key: str, **kwargs: str) -> str:
+            _ = kwargs
+            return key
+
+        fallback_l10n.get = MagicMock(side_effect=_fallback_get)
+
+        await handle_user_message(
+            mock_message,
+            mock_fsm_context,
+            fallback_l10n,
+            mock_ai_service,
+        )
+
+        mock_message.answer.assert_called_once_with(build_crisis_response())
+        mock_ai_service.generate.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_handle_user_message_persists_domain_pipeline_state(

@@ -92,6 +92,13 @@ generation_unexpected_error: |
   ❌ An unexpected error occurred during generation.
   Please try again or contact support.
 
+# Canonical crisis response for handler-level localization
+crisis_support_v1: |
+  I'm very sorry that things feel this hard right now.
+  If there is a risk to your life, your safety, or the safety of another person, I can't continue this conversation in the usual format.
+  Right now, it's important to seek urgent help in your country as soon as possible: emergency services, a trusted person nearby, or a specialist who can be with you in real time.
+  When the situation becomes safer, you can return here later.
+
 # Callback data not found
 error_callback_data: "❌ Error: data not found"
 

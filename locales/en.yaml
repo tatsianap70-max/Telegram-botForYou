@@ -799,6 +799,18 @@ legal_accepted_message: |
   Thank you for reviewing the documents!
   You can now use all bot features.
 
+# Onboarding message after legal acceptance.
+# Used only in post-legal path (not generic welcome).
+post_legal_onboarding_message: |
+  🌿 <b>Welcome.</b>
+
+  This bot helps you calmly work through one situation at a time:
+  • separate facts from emotions
+  • notice repeating patterns
+  • define one realistic next step
+
+  The flow stays short and steady, without pressure or ready-made decisions for you.
+
 # Message if user already accepted terms
 legal_already_accepted: "You have already accepted these terms"
 

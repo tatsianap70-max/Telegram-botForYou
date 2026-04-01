@@ -28,7 +28,7 @@ from src.bot.keyboards.inline.legal import (
     create_legal_documents_keyboard,
     create_terms_acceptance_keyboard,
 )
-from src.bot.static import WELCOME_IMAGE
+from src.bot.static import IMAGES_DIR
 from src.config.yaml_config import yaml_config
 from src.db.base import DatabaseSession
 from src.db.repositories.user_repo import UserRepository
@@ -42,6 +42,8 @@ COMMAND = BotCommand(command="terms", description="Юридические док
 router = Router(name="terms")
 logger = get_logger(__name__)
 ONBOARDING_COMPLETED_KEY = "onboarding_completed"
+POST_LEGAL_ONBOARDING_TEXT_KEY = "post_legal_onboarding_message"
+POST_LEGAL_ONBOARDING_IMAGE = IMAGES_DIR / "post_legal_onboarding.jpg"
 
 
 async def _mark_onboarding_completed(state: FSMContext | None) -> None:
@@ -163,16 +165,15 @@ async def callback_accept_terms(
         reply_markup=None,
     )
 
-    # Показываем приветственное сообщение с картинкой
-    # Если файл welcome.jpg существует — отправляем фото с подписью,
-    # иначе — только текстовое сообщение
-    if WELCOME_IMAGE.exists():
+    # Показываем отдельный onboarding-экран этого продукта после legal acceptance.
+    # В этом path не используем generic start_message.
+    if POST_LEGAL_ONBOARDING_IMAGE.exists():
         await callback.message.answer_photo(
-            photo=FSInputFile(WELCOME_IMAGE),
-            caption=l10n.get("start_message"),
+            photo=FSInputFile(POST_LEGAL_ONBOARDING_IMAGE),
+            caption=l10n.get(POST_LEGAL_ONBOARDING_TEXT_KEY),
         )
     else:
-        await callback.message.answer(l10n.get("start_message"))
+        await callback.message.answer(l10n.get(POST_LEGAL_ONBOARDING_TEXT_KEY))
 
     # Если начислен бонус — уведомляем пользователя
     if registration_bonus > 0:

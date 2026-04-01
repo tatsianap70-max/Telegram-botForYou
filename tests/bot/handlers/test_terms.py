@@ -103,7 +103,10 @@ def mock_l10n_ru() -> MagicMock:
                 "✅ <b>Условия приняты</b>\n\nТеперь вы можете использовать бота."
             ),
             "legal_already_accepted": "Вы уже приняли эти условия",
-            "start_message": "Привет! Я бот для AI-генерации.",
+            "post_legal_onboarding_message": (
+                "🌿 <b>Добро пожаловать.</b>\n\n"
+                "Этот бот помогает спокойно разобрать одну ситуацию за раз."
+            ),
             "billing_registration_bonus": "🎁 Вам начислено {amount} токенов!",
             "error_callback_data": "❌ Ошибка обработки запроса",
             "error_user_not_found": "❌ Пользователь не найден",
@@ -136,7 +139,10 @@ def mock_l10n_en() -> MagicMock:
                 "✅ <b>Terms Accepted</b>\n\nYou can now use the bot."
             ),
             "legal_already_accepted": "You have already accepted these terms",
-            "start_message": "Hello! I'm an AI generation bot.",
+            "post_legal_onboarding_message": (
+                "🌿 <b>Welcome.</b>\n\n"
+                "This bot helps you calmly work through one situation at a time."
+            ),
             "billing_registration_bonus": ("🎁 You've been credited {amount} tokens!"),
             "error_callback_data": "❌ Error processing request",
             "error_user_not_found": "❌ User not found",
@@ -312,6 +318,10 @@ async def test_callback_accept_terms_saves_acceptance(
     # Проверяем что сообщение обновлено
     mock_callback.message.edit_text.assert_called_once()
 
+    requested_keys = [call.args[0] for call in mock_l10n_ru.get.call_args_list]
+    assert "post_legal_onboarding_message" in requested_keys
+    assert "start_message" not in requested_keys
+
 
 @pytest.mark.asyncio
 async def test_callback_accept_terms_sets_onboarding_completed_flag(
@@ -325,7 +335,9 @@ async def test_callback_accept_terms_sets_onboarding_completed_flag(
         patch("src.bot.handlers.terms.DatabaseSession") as mock_session_cls,
         patch("src.bot.handlers.terms.UserRepository") as mock_repo_cls,
         patch("src.bot.handlers.terms.create_billing_service") as mock_billing_cls,
-        patch("src.bot.handlers.terms.WELCOME_IMAGE") as mock_welcome_image,
+        patch(
+            "src.bot.handlers.terms.POST_LEGAL_ONBOARDING_IMAGE"
+        ) as mock_onboarding_image,
     ):
         mock_legal = MagicMock()
         mock_legal.version = "1.0"
@@ -347,7 +359,7 @@ async def test_callback_accept_terms_sets_onboarding_completed_flag(
         mock_billing.grant_registration_bonus = AsyncMock(return_value=0)
         mock_billing_cls.return_value = mock_billing
 
-        mock_welcome_image.exists.return_value = False
+        mock_onboarding_image.exists.return_value = False
 
         await callback_accept_terms(
             mock_callback,
@@ -371,7 +383,9 @@ async def test_callback_accept_terms_grants_registration_bonus(
         patch("src.bot.handlers.terms.DatabaseSession") as mock_session_cls,
         patch("src.bot.handlers.terms.UserRepository") as mock_repo_cls,
         patch("src.bot.handlers.terms.create_billing_service") as mock_billing_cls,
-        patch("src.bot.handlers.terms.WELCOME_IMAGE") as mock_welcome_image,
+        patch(
+            "src.bot.handlers.terms.POST_LEGAL_ONBOARDING_IMAGE"
+        ) as mock_onboarding_image,
     ):
         mock_legal = MagicMock()
         mock_legal.version = "1.0"
@@ -399,7 +413,7 @@ async def test_callback_accept_terms_grants_registration_bonus(
         mock_billing_cls.return_value = mock_billing
 
         # Мокируем welcome image — картинка существует
-        mock_welcome_image.exists.return_value = True
+        mock_onboarding_image.exists.return_value = True
 
         await callback_accept_terms(mock_callback, mock_l10n_ru)
 
@@ -564,7 +578,9 @@ async def test_callback_accept_terms_no_bonus_if_balance_not_zero(
         patch("src.bot.handlers.terms.DatabaseSession") as mock_session_cls,
         patch("src.bot.handlers.terms.UserRepository") as mock_repo_cls,
         patch("src.bot.handlers.terms.create_billing_service") as mock_billing_cls,
-        patch("src.bot.handlers.terms.WELCOME_IMAGE") as mock_welcome_image,
+        patch(
+            "src.bot.handlers.terms.POST_LEGAL_ONBOARDING_IMAGE"
+        ) as mock_onboarding_image,
     ):
         mock_legal = MagicMock()
         mock_legal.version = "1.0"
@@ -587,7 +603,7 @@ async def test_callback_accept_terms_no_bonus_if_balance_not_zero(
         mock_billing_cls.return_value = mock_billing
 
         # Мокируем welcome image — картинка существует
-        mock_welcome_image.exists.return_value = True
+        mock_onboarding_image.exists.return_value = True
 
         await callback_accept_terms(mock_callback, mock_l10n_ru)
 

@@ -18,6 +18,7 @@
 10. Локализация работает для обоих языков (ru, en)
 """
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -26,7 +27,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, User
 
 from src.bot.handlers.terms import (
+    START_DIALOG_CALLBACK,
     callback_accept_terms,
+    callback_start_dialog,
     cmd_terms,
     show_terms_acceptance_request,
 )
@@ -78,6 +81,7 @@ def mock_fsm_context() -> FSMContext:
     """Мок FSMContext для проверки установки onboarding-флага."""
     context = MagicMock(spec=FSMContext)
     context.update_data = AsyncMock()
+    context.set_state = AsyncMock()
     return context
 
 
@@ -103,13 +107,16 @@ def mock_l10n_ru() -> MagicMock:
                 "✅ <b>Условия приняты</b>\n\nТеперь вы можете использовать бота."
             ),
             "legal_already_accepted": "Вы уже приняли эти условия",
-            "post_legal_onboarding_message": (
+            "product_onboarding_message": (
                 "🌿 <b>Добро пожаловать.</b>\n\n"
                 "Этот бот помогает спокойно разобрать одну ситуацию за раз."
             ),
+            "start_dialog_button": "Начать диалог",
             "billing_registration_bonus": "🎁 Вам начислено {amount} токенов!",
             "error_callback_data": "❌ Ошибка обработки запроса",
             "error_user_not_found": "❌ Пользователь не найден",
+            "chatgpt_choose_model": "Выберите модель для диалога",
+            "no_models_available": "Нет доступных моделей",
         }
         text = translations.get(key, key)
         if kwargs:
@@ -139,13 +146,16 @@ def mock_l10n_en() -> MagicMock:
                 "✅ <b>Terms Accepted</b>\n\nYou can now use the bot."
             ),
             "legal_already_accepted": "You have already accepted these terms",
-            "post_legal_onboarding_message": (
+            "product_onboarding_message": (
                 "🌿 <b>Welcome.</b>\n\n"
                 "This bot helps you calmly work through one situation at a time."
             ),
+            "start_dialog_button": "Start conversation",
             "billing_registration_bonus": ("🎁 You've been credited {amount} tokens!"),
             "error_callback_data": "❌ Error processing request",
             "error_user_not_found": "❌ User not found",
+            "chatgpt_choose_model": "Choose a model for chat",
+            "no_models_available": "No models available",
         }
         text = translations.get(key, key)
         if kwargs:
@@ -319,8 +329,89 @@ async def test_callback_accept_terms_saves_acceptance(
     mock_callback.message.edit_text.assert_called_once()
 
     requested_keys = [call.args[0] for call in mock_l10n_ru.get.call_args_list]
-    assert "post_legal_onboarding_message" in requested_keys
+    assert "product_onboarding_message" in requested_keys
+    assert "start_dialog_button" in requested_keys
     assert "start_message" not in requested_keys
+
+
+@pytest.mark.asyncio
+async def test_callback_accept_terms_attaches_start_dialog_button(
+    mock_callback: MagicMock,
+    mock_l10n_ru: MagicMock,
+) -> None:
+    """Тест: post-legal onboarding содержит кнопку перехода в диалог."""
+    with (
+        patch("src.bot.handlers.terms.yaml_config") as mock_config,
+        patch("src.bot.handlers.terms.DatabaseSession") as mock_session_cls,
+        patch("src.bot.handlers.terms.UserRepository") as mock_repo_cls,
+        patch("src.bot.handlers.terms.create_billing_service") as mock_billing_cls,
+        patch(
+            "src.bot.handlers.terms.POST_LEGAL_ONBOARDING_IMAGE"
+        ) as mock_onboarding_image,
+    ):
+        mock_legal = MagicMock()
+        mock_legal.version = "1.0"
+        mock_config.legal = mock_legal
+
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__.return_value = mock_session
+
+        mock_user = MagicMock(spec=DbUser)
+        mock_user.registration_bonus_granted = True
+        mock_repo = MagicMock()
+        mock_repo.get_by_telegram_id = AsyncMock(return_value=mock_user)
+        mock_repo.needs_terms_acceptance.return_value = True
+        mock_repo.accept_terms = AsyncMock()
+        mock_repo_cls.return_value = mock_repo
+
+        mock_billing = MagicMock()
+        mock_billing.grant_registration_bonus = AsyncMock(return_value=0)
+        mock_billing_cls.return_value = mock_billing
+
+        # Проверяем text-only ветку: проще извлечь reply_markup из answer().
+        mock_onboarding_image.exists.return_value = False
+
+        await callback_accept_terms(mock_callback, mock_l10n_ru)
+
+    mock_callback.message.answer.assert_called_once()
+    reply_markup = mock_callback.message.answer.call_args.kwargs["reply_markup"]
+    assert len(reply_markup.inline_keyboard) == 1
+    assert len(reply_markup.inline_keyboard[0]) == 1
+    button = reply_markup.inline_keyboard[0][0]
+    assert button.callback_data == START_DIALOG_CALLBACK
+    assert button.text == "Начать диалог"
+
+
+@pytest.mark.asyncio
+async def test_callback_start_dialog_moves_to_chat_flow(
+    mock_callback: MagicMock,
+    mock_l10n_ru: MagicMock,
+    mock_fsm_context: FSMContext,
+) -> None:
+    """Тест: кнопка onboarding переводит пользователя в выбор модели chat."""
+    ai_service = MagicMock()
+    ai_service.get_available_models.return_value = {
+        "gpt-4o-mini": SimpleNamespace(
+            generation_type="chat",
+            display_name="GPT-4o-mini",
+            price_tokens=1,
+        )
+    }
+
+    await callback_start_dialog(
+        callback=mock_callback,
+        state=mock_fsm_context,
+        l10n=mock_l10n_ru,
+        ai_service=ai_service,
+    )
+
+    mock_fsm_context.update_data.assert_called_once_with({"onboarding_completed": True})
+    mock_fsm_context.set_state.assert_called_once()
+    mock_callback.answer.assert_called_once()
+    mock_callback.message.answer.assert_called_once()
+    call_args = mock_callback.message.answer.call_args
+    assert "Выберите модель" in call_args.args[0]
+    assert call_args.kwargs["reply_markup"] is not None
 
 
 @pytest.mark.asyncio

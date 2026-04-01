@@ -811,6 +811,34 @@ post_legal_onboarding_message: |
 
   The flow stays short and steady, without pressure or ready-made decisions for you.
 
+# Unified product onboarding text after legal acceptance.
+product_onboarding_message: |
+  Sometimes, looking at a situation more carefully is enough for things to become clearer.
+
+  This bot doesn’t give advice or ready-made solutions. Its purpose is to help you calmly understand the situation that is currently on your mind.
+
+  When there is a lot of internal tension, it becomes difficult to separate facts from anxiety, and real causes from habitual reactions.
+
+  Here, we will go step by step:
+  looking at what is happening,
+  reducing internal tension,
+  and finding a clearer perspective on the situation.
+
+  This bot does not replace therapy. It is a tool for thoughtful self-reflection.
+
+  In the free version, you have access to two introductory sessions — so you can experience the format and depth of the process.
+
+  In the extended version, the work goes deeper: into recurring patterns, stable reactions, and underlying mechanisms.
+
+  What matters here is not the speed of change, but the clarity of understanding.
+
+  You can move at your own pace.
+
+  When you’re ready — press “Start conversation”.
+
+# Button that moves user from onboarding to the main dialog flow.
+start_dialog_button: "Start conversation"
+
 # Message if user already accepted terms
 legal_already_accepted: "You have already accepted these terms"
 

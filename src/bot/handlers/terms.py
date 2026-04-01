@@ -21,17 +21,22 @@ from aiogram.types import (
     CallbackQuery,
     FSInputFile,
     InaccessibleMessage,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     Message,
 )
 
+from src.bot.keyboards import create_model_selection_keyboard
 from src.bot.keyboards.inline.legal import (
     create_legal_documents_keyboard,
     create_terms_acceptance_keyboard,
 )
+from src.bot.states import ChatGPTStates
 from src.bot.static import IMAGES_DIR
 from src.config.yaml_config import yaml_config
 from src.db.base import DatabaseSession
 from src.db.repositories.user_repo import UserRepository
+from src.services.ai_service import AIService, create_ai_service
 from src.services.billing_service import create_billing_service
 from src.utils.i18n import Localization
 from src.utils.logging import get_logger
@@ -42,8 +47,10 @@ COMMAND = BotCommand(command="terms", description="Юридические док
 router = Router(name="terms")
 logger = get_logger(__name__)
 ONBOARDING_COMPLETED_KEY = "onboarding_completed"
-POST_LEGAL_ONBOARDING_TEXT_KEY = "post_legal_onboarding_message"
+POST_LEGAL_ONBOARDING_TEXT_KEY = "product_onboarding_message"
 POST_LEGAL_ONBOARDING_IMAGE = IMAGES_DIR / "post_legal_onboarding.jpg"
+START_DIALOG_CALLBACK = "legal:start_dialog"
+GENERATION_TYPE_CHAT = "chat"
 
 
 async def _mark_onboarding_completed(state: FSMContext | None) -> None:
@@ -51,6 +58,20 @@ async def _mark_onboarding_completed(state: FSMContext | None) -> None:
     if state is None:
         return
     await state.update_data({ONBOARDING_COMPLETED_KEY: True})
+
+
+def _create_start_dialog_keyboard(l10n: Localization) -> InlineKeyboardMarkup:
+    """Создать inline-кнопку перехода к основному диалогу."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=l10n.get("start_dialog_button"),
+                    callback_data=START_DIALOG_CALLBACK,
+                )
+            ]
+        ]
+    )
 
 
 @router.message(Command("terms"))
@@ -167,13 +188,18 @@ async def callback_accept_terms(
 
     # Показываем отдельный onboarding-экран этого продукта после legal acceptance.
     # В этом path не используем generic start_message.
+    onboarding_keyboard = _create_start_dialog_keyboard(l10n)
     if POST_LEGAL_ONBOARDING_IMAGE.exists():
         await callback.message.answer_photo(
             photo=FSInputFile(POST_LEGAL_ONBOARDING_IMAGE),
             caption=l10n.get(POST_LEGAL_ONBOARDING_TEXT_KEY),
+            reply_markup=onboarding_keyboard,
         )
     else:
-        await callback.message.answer(l10n.get(POST_LEGAL_ONBOARDING_TEXT_KEY))
+        await callback.message.answer(
+            l10n.get(POST_LEGAL_ONBOARDING_TEXT_KEY),
+            reply_markup=onboarding_keyboard,
+        )
 
     # Если начислен бонус — уведомляем пользователя
     if registration_bonus > 0:
@@ -182,6 +208,42 @@ async def callback_accept_terms(
         )
 
     await _mark_onboarding_completed(state)
+
+
+@router.callback_query(F.data == START_DIALOG_CALLBACK)
+async def callback_start_dialog(
+    callback: CallbackQuery,
+    state: FSMContext,
+    l10n: Localization,
+    ai_service: AIService | None = None,
+) -> None:
+    """Перевести пользователя из onboarding в основной chat flow."""
+    if (
+        callback.message is None
+        or isinstance(callback.message, InaccessibleMessage)
+        or callback.from_user is None
+    ):
+        await callback.answer(l10n.get("error_callback_data"))
+        return
+
+    if ai_service is None:
+        ai_service = create_ai_service()
+
+    available_models = ai_service.get_available_models()
+    keyboard = create_model_selection_keyboard(available_models, GENERATION_TYPE_CHAT)
+
+    if not keyboard.inline_keyboard:
+        await callback.answer()
+        await callback.message.answer(l10n.get("no_models_available"))
+        return
+
+    await state.update_data({ONBOARDING_COMPLETED_KEY: True})
+    await state.set_state(ChatGPTStates.waiting_for_model_selection)
+    await callback.answer()
+    await callback.message.answer(
+        l10n.get("chatgpt_choose_model"),
+        reply_markup=keyboard,
+    )
 
 
 async def show_terms_acceptance_request(

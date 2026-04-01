@@ -76,7 +76,7 @@ def mock_l10n_ru() -> MagicMock:
                 "/start — начать работу\n"
                 "/language — выбрать язык интерфейса"
             ),
-            "post_legal_onboarding_message": (
+            "product_onboarding_message": (
                 "🌿 Добро пожаловать.\n"
                 "Этот бот помогает спокойно разобрать одну ситуацию за раз."
             ),
@@ -104,7 +104,7 @@ def mock_l10n_en() -> MagicMock:
                 "/start — start using the bot\n"
                 "/language — choose interface language"
             ),
-            "post_legal_onboarding_message": (
+            "product_onboarding_message": (
                 "🌿 Welcome.\n"
                 "This bot helps you calmly work through one situation at a time."
             ),
@@ -383,7 +383,7 @@ async def test_cmd_start_sends_localized_message(
     mock_message.answer_photo.assert_called_once()
 
     requested_keys = [call.args[0] for call in mock_l10n_ru.get.call_args_list]
-    assert "post_legal_onboarding_message" in requested_keys
+    assert "product_onboarding_message" in requested_keys
     assert "start_message" not in requested_keys
 
 
@@ -473,7 +473,7 @@ async def test_cmd_start_existing_user_with_accepted_legal_uses_product_onboardi
     mock_message.answer_photo.assert_called_once()
 
     requested_keys = [call.args[0] for call in mock_l10n_ru.get.call_args_list]
-    assert "post_legal_onboarding_message" in requested_keys
+    assert "product_onboarding_message" in requested_keys
     assert "start_message" not in requested_keys
 
 
@@ -589,7 +589,7 @@ async def test_cmd_start_handles_message_without_user(
 
     # Должен отправить сообщение без создания пользователя
     message.answer.assert_called_once()
-    mock_l10n_ru.get.assert_called_with("post_legal_onboarding_message")
+    mock_l10n_ru.get.assert_called_with("product_onboarding_message")
 
 
 @pytest.mark.asyncio

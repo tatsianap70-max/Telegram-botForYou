@@ -49,6 +49,8 @@ logger = get_logger(__name__)
 
 # Callback для принятия условий — должен проходить без проверки
 CALLBACK_LEGAL_ACCEPT = "legal:accept"
+START_LANGUAGE_CALLBACK_PREFIX = "start_lang:"
+START_COMMAND_PREFIX = "/start"
 
 # TTL кеша по умолчанию: 24 часа (86400 секунд)
 # Версия документов меняется редко, поэтому можно кешировать надолго
@@ -109,6 +111,25 @@ class LegalConsentMiddleware(BaseMiddleware):
             cache_ttl_seconds,
         )
 
+    @staticmethod
+    def _is_start_command(event: TelegramObject) -> bool:
+        """Проверить, что событие — команда /start."""
+        if not isinstance(event, Message):
+            return False
+        event_text = getattr(event, "text", None)
+        return isinstance(event_text, str) and event_text.startswith(
+            START_COMMAND_PREFIX
+        )
+
+    @staticmethod
+    def _is_start_language_callback(event: TelegramObject) -> bool:
+        """Проверить, что callback относится к стартовому выбору языка."""
+        if not isinstance(event, CallbackQuery):
+            return False
+        return isinstance(event.data, str) and event.data.startswith(
+            START_LANGUAGE_CALLBACK_PREFIX
+        )
+
     @override
     async def __call__(
         self,
@@ -146,6 +167,14 @@ class LegalConsentMiddleware(BaseMiddleware):
         if isinstance(event, CallbackQuery) and event.data == CALLBACK_LEGAL_ACCEPT:
             # Очищаем кеш — после принятия нужна актуальная проверка
             self.clear_cache(user_id)
+            return await handler(event, data)
+
+        # /start проходит до legal-check, чтобы показать входной language gate.
+        if self._is_start_command(event):
+            return await handler(event, data)
+
+        # Callback стартового выбора языка должен проходить до legal-check.
+        if self._is_start_language_callback(event):
             return await handler(event, data)
 
         # Проверяем согласие (из кеша или БД)

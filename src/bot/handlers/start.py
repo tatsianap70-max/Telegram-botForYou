@@ -18,7 +18,9 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
+    CallbackQuery,
     FSInputFile,
+    InaccessibleMessage,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -28,13 +30,14 @@ from src.bot.handlers.terms import (
     POST_LEGAL_ONBOARDING_IMAGE,
     POST_LEGAL_ONBOARDING_TEXT_KEY,
     START_DIALOG_CALLBACK,
+    show_terms_acceptance_request,
 )
 from src.config.yaml_config import yaml_config
 from src.db.base import DatabaseSession
 from src.db.repositories.user_repo import UserRepository
 from src.services.billing_service import create_billing_service
 from src.services.referral_service import create_referral_service
-from src.utils.i18n import Localization
+from src.utils.i18n import Localization, create_localization
 from src.utils.logging import get_logger
 
 router = Router(name="start")
@@ -48,6 +51,9 @@ logger = get_logger(__name__)
 # Telegram deep links: t.me/bot?start=promo → /start promo
 COMMAND_START_PREFIX_LENGTH = 7  # len("/start ") = 7
 ONBOARDING_COMPLETED_KEY = "onboarding_completed"
+START_LANGUAGE_CALLBACK_PREFIX = "start_lang:"
+ENTRY_LANGUAGES: tuple[str, str] = ("ru", "en")
+START_LANGUAGE_CHOICE_TEXT_KEY = "language_command"
 # Оставляем имя WELCOME_IMAGE для обратной совместимости тестов / патчей.
 WELCOME_IMAGE = POST_LEGAL_ONBOARDING_IMAGE
 PRODUCT_ONBOARDING_TEXT_KEY = POST_LEGAL_ONBOARDING_TEXT_KEY
@@ -72,6 +78,42 @@ async def _mark_onboarding_completed(state: FSMContext | None) -> None:
     if state is None:
         return
     await state.update_data({ONBOARDING_COMPLETED_KEY: True})
+
+
+def _create_start_language_keyboard(l10n: Localization) -> InlineKeyboardMarkup:
+    """Создать клавиатуру выбора языка для entry-path."""
+    buttons: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                text=l10n.get(f"language_name_{language_code}"),
+                callback_data=(
+                    f"{START_LANGUAGE_CALLBACK_PREFIX}{language_code}"
+                ),
+            )
+        ]
+        for language_code in ENTRY_LANGUAGES
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def _should_show_start_language_gate(created: bool) -> bool:
+    """Проверить, нужен ли явный language gate в /start."""
+    if not created or not Localization.is_enabled():
+        return False
+    available_languages = set(Localization.get_available_languages())
+    return set(ENTRY_LANGUAGES).issubset(available_languages)
+
+
+def _extract_start_language(data: str | None) -> str | None:
+    """Извлечь язык из callback_data стартового language gate."""
+    if not isinstance(data, str) or not data.startswith(
+        START_LANGUAGE_CALLBACK_PREFIX
+    ):
+        return None
+    language_code = data[len(START_LANGUAGE_CALLBACK_PREFIX) :]
+    if language_code in ENTRY_LANGUAGES:
+        return language_code
+    return None
 
 
 def _extract_start_param(message: Message) -> str | None:
@@ -250,11 +292,15 @@ async def cmd_start(
                     legal_config.version,
                 )
 
+    if _should_show_start_language_gate(created):
+        await message.answer(
+            l10n.get(START_LANGUAGE_CHOICE_TEXT_KEY),
+            reply_markup=_create_start_language_keyboard(l10n),
+        )
+        return
+
     # Если нужно согласие — показываем запрос
     if needs_terms_acceptance:
-        # Импортируем здесь, чтобы избежать циклических импортов
-        from src.bot.handlers.terms import show_terms_acceptance_request
-
         shown = await show_terms_acceptance_request(message, l10n)
         if shown:
             # Запрос показан — не показываем приветствие,
@@ -287,6 +333,81 @@ async def cmd_start(
     # Если начислен реферальный бонус — уведомляем пользователя
     if referral_bonus > 0:
         await message.answer(l10n.get("referral_invitee_bonus", amount=referral_bonus))
+
+    await _mark_onboarding_completed(state)
+
+
+@router.callback_query(F.data.startswith(START_LANGUAGE_CALLBACK_PREFIX))
+async def callback_start_language_selection(
+    callback: CallbackQuery,
+    state: FSMContext | None = None,
+) -> None:
+    """Обработать выбор языка в стартовом entry-path."""
+    if (
+        callback.message is None
+        or isinstance(callback.message, InaccessibleMessage)
+        or callback.from_user is None
+    ):
+        return
+
+    selected_language = _extract_start_language(callback.data)
+    if selected_language is None:
+        fallback_l10n = create_localization(Localization.get_default_language())
+        await callback.answer(
+            fallback_l10n.get("error_language_not_supported"),
+            show_alert=True,
+        )
+        return
+
+    selected_l10n = create_localization(selected_language)
+    legal_config = yaml_config.legal
+    needs_terms_acceptance = False
+
+    async with DatabaseSession() as session:
+        repo = UserRepository(session)
+        user = await repo.get_by_telegram_id(callback.from_user.id)
+        if user is None:
+            user, _ = await repo.get_or_create(
+                telegram_id=callback.from_user.id,
+                username=callback.from_user.username,
+                first_name=callback.from_user.first_name,
+                last_name=callback.from_user.last_name,
+                language=selected_language,
+                source=None,
+            )
+        else:
+            await repo.update_language(user, selected_language)
+
+        if (
+            legal_config.enabled
+            and legal_config.has_documents()
+            and repo.needs_terms_acceptance(user, legal_config.version)
+        ):
+            needs_terms_acceptance = True
+
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer()
+
+    if needs_terms_acceptance:
+        shown = await show_terms_acceptance_request(
+            callback.message,
+            selected_l10n,
+        )
+        if shown:
+            return
+
+    onboarding_keyboard = _create_start_dialog_keyboard(selected_l10n)
+    if WELCOME_IMAGE.exists():
+        await callback.message.answer_photo(
+            photo=FSInputFile(WELCOME_IMAGE),
+            caption=selected_l10n.get(PRODUCT_ONBOARDING_TEXT_KEY),
+            reply_markup=onboarding_keyboard,
+        )
+    else:
+        await callback.message.answer(
+            selected_l10n.get(PRODUCT_ONBOARDING_TEXT_KEY),
+            reply_markup=onboarding_keyboard,
+        )
 
     await _mark_onboarding_completed(state)
 

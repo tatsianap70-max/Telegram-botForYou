@@ -21,11 +21,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, User
+from aiogram.types import CallbackQuery, Message, User
 
 from src.bot.handlers.start import (
     _detect_user_language,
     _extract_start_param,
+    callback_start_language_selection,
     cmd_start,
 )
 from src.db.models.user import User as DbUser
@@ -394,10 +395,7 @@ async def test_cmd_start_new_user_shows_legal_request_before_onboarding(
     mock_message: MagicMock,
     mock_l10n_ru: MagicMock,
 ) -> None:
-    """Тест: новый пользователь сначала получает legal request.
-
-    Onboarding-экран на этом шаге не показывается.
-    """
+    """Тест: новый пользователь сначала получает language gate в /start."""
     from src.services.referral_service import ReferralResult
 
     with (
@@ -407,8 +405,13 @@ async def test_cmd_start_new_user_shows_legal_request_before_onboarding(
         patch("src.bot.handlers.start.yaml_config") as mock_yaml_config,
         patch("src.bot.handlers.start.create_referral_service") as mock_referral_cls,
         patch(
-            "src.bot.handlers.terms.show_terms_acceptance_request", new=AsyncMock()
+            "src.bot.handlers.start.show_terms_acceptance_request", new=AsyncMock()
         ) as mock_show_terms,
+        patch("src.bot.handlers.start.Localization.is_enabled", return_value=True),
+        patch(
+            "src.bot.handlers.start.Localization.get_available_languages",
+            return_value=["ru", "en"],
+        ),
     ):
         mock_legal_config = MagicMock()
         mock_legal_config.enabled = True
@@ -433,9 +436,19 @@ async def test_cmd_start_new_user_shows_legal_request_before_onboarding(
 
         await cmd_start(mock_message, mock_l10n_ru)
 
-    mock_show_terms.assert_awaited_once_with(mock_message, mock_l10n_ru)
+    mock_show_terms.assert_not_awaited()
     mock_message.answer_photo.assert_not_called()
-    mock_message.answer.assert_not_called()
+    mock_message.answer.assert_called_once()
+    call_kwargs = mock_message.answer.call_args.kwargs
+    assert "reply_markup" in call_kwargs
+    reply_markup = call_kwargs["reply_markup"]
+    callback_data = [
+        button.callback_data
+        for row in reply_markup.inline_keyboard
+        for button in row
+    ]
+    assert "start_lang:ru" in callback_data
+    assert "start_lang:en" in callback_data
 
 
 @pytest.mark.asyncio
@@ -451,7 +464,7 @@ async def test_cmd_start_existing_user_with_accepted_legal_uses_product_onboardi
         patch("src.bot.handlers.start.WELCOME_IMAGE") as mock_welcome_image,
         patch("src.bot.handlers.start.yaml_config") as mock_yaml_config,
         patch(
-            "src.bot.handlers.terms.show_terms_acceptance_request", new=AsyncMock()
+            "src.bot.handlers.start.show_terms_acceptance_request", new=AsyncMock()
         ) as mock_show_terms,
     ):
         mock_legal_config = MagicMock()
@@ -480,6 +493,68 @@ async def test_cmd_start_existing_user_with_accepted_legal_uses_product_onboardi
     requested_keys = [call.args[0] for call in mock_l10n_ru.get.call_args_list]
     assert "product_onboarding_message" in requested_keys
     assert "start_message" not in requested_keys
+
+
+@pytest.mark.asyncio
+async def test_callback_start_language_selection_routes_to_legal(
+    mock_fsm_context: FSMContext,
+) -> None:
+    """Тест: после выбора языка стартовый flow переходит в legal."""
+    callback = MagicMock(spec=CallbackQuery)
+    callback.from_user = User(
+        id=123456789,
+        is_bot=False,
+        first_name="Test User",
+        username="testuser",
+        language_code="ru",
+    )
+    callback.data = "start_lang:en"
+    callback.answer = AsyncMock()
+    callback.message = MagicMock(spec=Message)
+    callback.message.answer = AsyncMock()
+    callback.message.answer_photo = AsyncMock()
+    callback.message.edit_reply_markup = AsyncMock()
+
+    selected_l10n = MagicMock(spec=Localization)
+    selected_l10n.get.side_effect = lambda key, **_: key
+
+    with (
+        patch("src.bot.handlers.start.DatabaseSession") as mock_session_cls,
+        patch("src.bot.handlers.start.UserRepository") as mock_repo_cls,
+        patch("src.bot.handlers.start.create_localization") as mock_create_l10n,
+        patch(
+            "src.bot.handlers.start.show_terms_acceptance_request", new=AsyncMock()
+        ) as mock_show_terms,
+        patch("src.bot.handlers.start.yaml_config") as mock_yaml_config,
+    ):
+        mock_create_l10n.return_value = selected_l10n
+
+        mock_legal_config = MagicMock()
+        mock_legal_config.enabled = True
+        mock_legal_config.version = "1.0"
+        mock_legal_config.has_documents.return_value = True
+        mock_yaml_config.legal = mock_legal_config
+
+        mock_session = AsyncMock()
+        mock_session_cls.return_value.__aenter__.return_value = mock_session
+
+        mock_user = MagicMock(spec=DbUser)
+        mock_repo = MagicMock()
+        mock_repo.get_by_telegram_id = AsyncMock(return_value=mock_user)
+        mock_repo.update_language = AsyncMock()
+        mock_repo.needs_terms_acceptance.return_value = True
+        mock_repo_cls.return_value = mock_repo
+
+        mock_show_terms.return_value = True
+
+        await callback_start_language_selection(callback, mock_fsm_context)
+
+    mock_repo.update_language.assert_awaited_once_with(mock_user, "en")
+    mock_show_terms.assert_awaited_once_with(callback.message, selected_l10n)
+    callback.message.answer_photo.assert_not_called()
+    callback.message.answer.assert_not_called()
+    callback.message.edit_reply_markup.assert_called_once_with(reply_markup=None)
+    mock_fsm_context.update_data.assert_not_called()
 
 
 @pytest.mark.asyncio

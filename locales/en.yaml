@@ -838,6 +838,7 @@ product_onboarding_message: |
 
 # Button that moves user from onboarding to the main dialog flow.
 start_dialog_button: "Start conversation"
+start_dialog_ready_message: "You can begin now. Briefly describe the situation you want to look at."
 
 # Message if user already accepted terms
 legal_already_accepted: "You have already accepted these terms"

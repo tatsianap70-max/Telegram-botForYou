@@ -806,6 +806,7 @@ product_onboarding_message: |
 
 # Кнопка перехода из onboarding в основной диалог.
 start_dialog_button: "Начать диалог"
+start_dialog_ready_message: "Можно начать. Коротко опишите ситуацию, с которой вы хотите разобраться."
 
 # Сообщение если пользователь уже принял условия
 legal_already_accepted: "Вы уже приняли эти условия"

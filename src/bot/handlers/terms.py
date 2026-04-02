@@ -52,6 +52,7 @@ POST_LEGAL_ONBOARDING_TEXT_KEY = "product_onboarding_message"
 POST_LEGAL_ONBOARDING_IMAGE = IMAGES_DIR / "post_legal_onboarding.jpg"
 START_DIALOG_CALLBACK = "legal:start_dialog"
 GENERATION_TYPE_CHAT = "chat"
+START_DIALOG_READY_TEXT_KEY = "start_dialog_ready_message"
 
 
 async def _mark_onboarding_completed(state: FSMContext | None) -> None:
@@ -264,6 +265,7 @@ async def callback_start_dialog(
     await state.set_state(ChatGPTStates.waiting_for_message)
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer()
+    await callback.message.answer(l10n.get(START_DIALOG_READY_TEXT_KEY))
 
 
 async def show_terms_acceptance_request(

@@ -113,6 +113,10 @@ def mock_l10n_ru() -> MagicMock:
                 "Этот бот помогает спокойно разобрать одну ситуацию за раз."
             ),
             "start_dialog_button": "Начать диалог",
+            "start_dialog_ready_message": (
+                "Можно начать. Коротко опишите ситуацию, "
+                "с которой вы хотите разобраться."
+            ),
             "billing_registration_bonus": "🎁 Вам начислено {amount} токенов!",
             "error_callback_data": "❌ Ошибка обработки запроса",
             "error_user_not_found": "❌ Пользователь не найден",
@@ -152,6 +156,9 @@ def mock_l10n_en() -> MagicMock:
                 "This bot helps you calmly work through one situation at a time."
             ),
             "start_dialog_button": "Start conversation",
+            "start_dialog_ready_message": (
+                "You can begin now. Briefly describe the situation you want to look at."
+            ),
             "billing_registration_bonus": ("🎁 You've been credited {amount} tokens!"),
             "error_callback_data": "❌ Error processing request",
             "error_user_not_found": "❌ User not found",
@@ -416,7 +423,9 @@ async def test_callback_start_dialog_moves_to_chat_flow(
     )
     mock_callback.message.edit_reply_markup.assert_called_once_with(reply_markup=None)
     mock_callback.answer.assert_called_once()
-    mock_callback.message.answer.assert_not_called()
+    mock_callback.message.answer.assert_called_once_with(
+        "Можно начать. Коротко опишите ситуацию, с которой вы хотите разобраться."
+    )
     mock_callback.message.answer_photo.assert_not_called()
 
 

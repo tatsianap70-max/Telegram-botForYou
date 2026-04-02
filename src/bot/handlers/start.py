@@ -17,11 +17,17 @@
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import FSInputFile, Message, ReplyKeyboardRemove
+from aiogram.types import (
+    FSInputFile,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from src.bot.handlers.terms import (
     POST_LEGAL_ONBOARDING_IMAGE,
     POST_LEGAL_ONBOARDING_TEXT_KEY,
+    START_DIALOG_CALLBACK,
 )
 from src.config.yaml_config import yaml_config
 from src.db.base import DatabaseSession
@@ -45,6 +51,20 @@ ONBOARDING_COMPLETED_KEY = "onboarding_completed"
 # Оставляем имя WELCOME_IMAGE для обратной совместимости тестов / патчей.
 WELCOME_IMAGE = POST_LEGAL_ONBOARDING_IMAGE
 PRODUCT_ONBOARDING_TEXT_KEY = POST_LEGAL_ONBOARDING_TEXT_KEY
+
+
+def _create_start_dialog_keyboard(l10n: Localization) -> InlineKeyboardMarkup:
+    """Создать inline-кнопку перехода к основному диалогу."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=l10n.get("start_dialog_button"),
+                    callback_data=START_DIALOG_CALLBACK,
+                )
+            ]
+        ]
+    )
 
 
 async def _mark_onboarding_completed(state: FSMContext | None) -> None:
@@ -245,19 +265,17 @@ async def cmd_start(
     # Если файл welcome.jpg существует — отправляем фото с подписью,
     # иначе — только текстовое сообщение.
     #
-    # ВАЖНО: Используем ReplyKeyboardRemove для очистки reply keyboard.
-    # Это гарантирует, что при перезапуске бота не будет висеть устаревшая
-    # клавиатура от предыдущей версии бота.
+    onboarding_keyboard = _create_start_dialog_keyboard(l10n)
     if WELCOME_IMAGE.exists():
         await message.answer_photo(
             photo=FSInputFile(WELCOME_IMAGE),
             caption=l10n.get(PRODUCT_ONBOARDING_TEXT_KEY),
-            reply_markup=ReplyKeyboardRemove(),
+            reply_markup=onboarding_keyboard,
         )
     else:
         await message.answer(
             l10n.get(PRODUCT_ONBOARDING_TEXT_KEY),
-            reply_markup=ReplyKeyboardRemove(),
+            reply_markup=onboarding_keyboard,
         )
 
     # Если начислен бонус — уведомляем пользователя

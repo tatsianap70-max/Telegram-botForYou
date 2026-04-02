@@ -80,6 +80,7 @@ def mock_l10n_ru() -> MagicMock:
                 "🌿 Добро пожаловать.\n"
                 "Этот бот помогает спокойно разобрать одну ситуацию за раз."
             ),
+            "start_dialog_button": "Начать диалог",
         }
         text = translations.get(key, key)
         if kwargs:
@@ -108,6 +109,7 @@ def mock_l10n_en() -> MagicMock:
                 "🌿 Welcome.\n"
                 "This bot helps you calmly work through one situation at a time."
             ),
+            "start_dialog_button": "Start conversation",
         }
         text = translations.get(key, key)
         if kwargs:
@@ -748,16 +750,12 @@ async def test_cmd_start_no_bonus_notification_if_zero(
 
 
 @pytest.mark.asyncio
-async def test_cmd_start_sends_reply_keyboard_remove(
+async def test_cmd_start_attaches_start_dialog_button(
     mock_message: MagicMock,
     mock_l10n_ru: MagicMock,
 ) -> None:
-    """Тест: /start отправляет ReplyKeyboardRemove для очистки старой клавиатуры.
-
-    ВАЖНО: ReplyKeyboardRemove гарантирует, что при перезапуске бота не будет
-    висеть устаревшая reply keyboard от предыдущей версии бота.
-    """
-    from aiogram.types import ReplyKeyboardRemove
+    """Тест: /start с картинкой добавляет кнопку «Начать диалог»."""
+    from src.bot.handlers.start import START_DIALOG_CALLBACK
 
     # Мокируем legal config — отключаем проверку согласия
     mock_legal_config = MagicMock()
@@ -792,20 +790,25 @@ async def test_cmd_start_sends_reply_keyboard_remove(
 
         await cmd_start(mock_message, mock_l10n_ru)
 
-    # Проверяем что был вызов answer_photo с ReplyKeyboardRemove
+    # Проверяем что был вызов answer_photo с inline-кнопкой перехода.
     mock_message.answer_photo.assert_called_once()
     call_kwargs = mock_message.answer_photo.call_args[1]
     assert "reply_markup" in call_kwargs
-    assert isinstance(call_kwargs["reply_markup"], ReplyKeyboardRemove)
+    reply_markup = call_kwargs["reply_markup"]
+    assert len(reply_markup.inline_keyboard) == 1
+    assert len(reply_markup.inline_keyboard[0]) == 1
+    button = reply_markup.inline_keyboard[0][0]
+    assert button.callback_data == START_DIALOG_CALLBACK
+    assert button.text == "Начать диалог"
 
 
 @pytest.mark.asyncio
-async def test_cmd_start_sends_reply_keyboard_remove_when_no_image(
+async def test_cmd_start_attaches_start_dialog_button_when_no_image(
     mock_message: MagicMock,
     mock_l10n_ru: MagicMock,
 ) -> None:
-    """Тест: /start отправляет ReplyKeyboardRemove даже когда нет welcome image."""
-    from aiogram.types import ReplyKeyboardRemove
+    """Тест: /start без картинки тоже добавляет кнопку «Начать диалог»."""
+    from src.bot.handlers.start import START_DIALOG_CALLBACK
 
     # Мокируем legal config — отключаем проверку согласия
     mock_legal_config = MagicMock()
@@ -840,11 +843,16 @@ async def test_cmd_start_sends_reply_keyboard_remove_when_no_image(
 
         await cmd_start(mock_message, mock_l10n_ru)
 
-    # Проверяем что был вызов answer с ReplyKeyboardRemove
+    # Проверяем что был вызов answer с inline-кнопкой перехода.
     mock_message.answer.assert_called_once()
     call_kwargs = mock_message.answer.call_args[1]
     assert "reply_markup" in call_kwargs
-    assert isinstance(call_kwargs["reply_markup"], ReplyKeyboardRemove)
+    reply_markup = call_kwargs["reply_markup"]
+    assert len(reply_markup.inline_keyboard) == 1
+    assert len(reply_markup.inline_keyboard[0]) == 1
+    button = reply_markup.inline_keyboard[0][0]
+    assert button.callback_data == START_DIALOG_CALLBACK
+    assert button.text == "Начать диалог"
 
 
 # ==============================================================================

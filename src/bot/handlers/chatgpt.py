@@ -13,19 +13,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.bot.keyboards import create_model_selection_keyboard
 from src.bot.states import ChatGPTStates
-from src.config.yaml_config import yaml_config
 from src.db.base import DatabaseSession
-from src.db.repositories import MessageRepository
 from src.providers.ai.base import GenerationType
 from src.services.ai_service import AIService, create_ai_service
 from src.services.coaching.adaptive_session_engine import AdaptiveSessionEngine
 from src.services.coaching.anti_loop import evaluate_anti_loop
-from src.services.coaching.contracts.enums import SessionMode
+from src.services.coaching.contracts.enums import SessionMode, SessionStage
 from src.services.coaching.contracts.session import SessionState
 from src.services.coaching.premium_trigger import (
+    build_premium_reflection,
     evaluate_premium_trigger,
     mark_trigger_shown,
+    pre_premium_reflection,
 )
+from src.services.coaching.reflection_engine import ReflectionEngine
 from src.services.coaching.response_planner import (
     ResponsePlan as DomainResponsePlan,
 )
@@ -38,7 +39,6 @@ from src.services.coaching.safety_layer import (
     should_interrupt_session,
 )
 from src.services.coaching.session_manager import SessionManager
-from src.services.generation import ChatGenerationService
 from src.utils import send_chat_action, send_long_message
 from src.utils.i18n import Localization
 from src.utils.logging import get_logger
@@ -50,11 +50,81 @@ logger = get_logger(__name__)
 
 GENERATION_TYPE_CHAT = "chat"
 ROLE_USER = "user"
-ROLE_ASSISTANT = "assistant"
 COACHING_STATE_KEY = "coaching_session_state"
 COACHING_RECENT_TURNS_KEY = "coaching_recent_user_turns"
 COACHING_LAST_PLAN_KEY = "coaching_last_response_plan"
 ONBOARDING_COMPLETED_KEY = "onboarding_completed"
+
+
+def _compose_anti_loop_response(
+    strategy: str | None,
+    reflection_engine: ReflectionEngine,
+    coaching_state: SessionState,
+    user_text: str,
+) -> str:
+    """Собрать короткий ответ для anti-loop стратегии без генерации."""
+    if strategy == "angle_shift":
+        return (
+            "Давайте посмотрим на это с другого угла: "
+            "какой новый факт здесь важен именно сейчас?"
+        )
+    if strategy == "simplify":
+        return "Если упростить до одной точки: что сейчас самое важное?"
+    if strategy == "meta_question":
+        return "Какой один вопрос может прояснить ситуацию лучше всего?"
+    if strategy == "insight_trigger":
+        return reflection_engine.insight_hypothesis(coaching_state, user_text)
+    if strategy == "soft_close":
+        return reflection_engine.soft_landing(coaching_state, user_text)
+    return reflection_engine.next_question_prompt(coaching_state, user_text)
+
+
+def _compose_domain_response(
+    coaching_state: SessionState,
+    user_text: str,
+    response_plan: DomainResponsePlan,
+) -> str:
+    """Собрать итоговый текст по domain policy без legacy AI-генерации."""
+    reflection_engine = ReflectionEngine()
+
+    if response_plan.should_complete:
+        if response_plan.completion_stage == SessionStage.REFLECTION_SUMMARY.value:
+            summary = reflection_engine.reflection_summary(coaching_state, user_text)
+            exit_question = reflection_engine.exit_reflection_question(
+                coaching_state,
+                user_text,
+            )
+            return f"{summary}\n\n{exit_question}"
+        soft_landing = reflection_engine.soft_landing(coaching_state, user_text)
+        exit_question = reflection_engine.exit_reflection_question(
+            coaching_state,
+            user_text,
+        )
+        return f"{soft_landing}\n\n{exit_question}"
+
+    if response_plan.reply_type == "anti_loop":
+        return _compose_anti_loop_response(
+            response_plan.next_step_type,
+            reflection_engine,
+            coaching_state,
+            user_text,
+        )
+
+    if response_plan.show_premium:
+        premium_text = pre_premium_reflection(
+            coaching_state
+        ) or build_premium_reflection(coaching_state)
+        if premium_text:
+            return premium_text
+
+    if response_plan.reply_type == "decision_prompt":
+        return reflection_engine.next_question_prompt(coaching_state, user_text)
+
+    short_reflection = reflection_engine.short_reflection(coaching_state, user_text)
+    next_question = reflection_engine.next_question_prompt(coaching_state, user_text)
+    if short_reflection == next_question:
+        return short_reflection
+    return f"{short_reflection}\n\n{next_question}"
 
 
 async def _send_ai_response(message: Message, content: str) -> None:
@@ -212,9 +282,11 @@ async def handle_user_message(
         [], AbstractAsyncContextManager[AsyncSession]
     ] = DatabaseSession,
 ) -> None:
-    """Обработать сообщение пользователя и сгенерировать ответ AI."""
+    """Обработать сообщение пользователя через доменный coaching pipeline."""
     if not message.from_user or not message.text:
         return
+    _ = ai_service
+    _ = session_factory
 
     state_data = await state.get_data()
     if state_data.get(ONBOARDING_COMPLETED_KEY) is not True:
@@ -288,59 +360,12 @@ async def handle_user_message(
         mark_trigger_shown(coaching_state)
 
     try:
-        processing_msg = await message.answer(l10n.get("chatgpt_generating"))
-
-        async with session_factory() as session:
-            message_repo = MessageRepository(session)
-
-            from src.db.repositories import UserRepository
-
-            user_repo = UserRepository(session)
-            user = await user_repo.get_by_telegram_id(message.from_user.id)
-            if not user:
-                await processing_msg.edit_text(l10n.get("error_user_not_found"))
-                return
-
-            context_messages = await message_repo.get_context(
-                user_id=user.id,
-                model_key=model_key,
-                max_messages=yaml_config.limits.max_context_messages,
-            )
-
-            await message_repo.add_message(
-                user_id=user.id,
-                model_key=model_key,
-                role=ROLE_USER,
-                content=message.text,
-            )
-
-            messages_for_ai = []
-            model_config = yaml_config.get_model(model_key)
-            if model_config and model_config.system_prompt:
-                messages_for_ai.append(
-                    {"role": "system", "content": model_config.system_prompt}
-                )
-
-            messages_for_ai.extend(
-                [{"role": msg.role, "content": msg.content} for msg in context_messages]
-            )
-            messages_for_ai.append({"role": ROLE_USER, "content": message.text})
-
-            generation_service = ChatGenerationService(session, ai_service=ai_service)
-            result = await generation_service.execute(
-                telegram_user_id=message.from_user.id,
-                model_key=model_key,
-                processing_msg=processing_msg,
-                l10n=l10n,
-                messages=messages_for_ai,
-                user_id=user.id,
-            )
-
-            if not result.success:
-                return
-
-            await processing_msg.delete()
-            await _send_ai_response(message, result.content)
+        domain_response = _compose_domain_response(
+            coaching_state=coaching_state,
+            user_text=message.text,
+            response_plan=response_plan,
+        )
+        await _send_ai_response(message, domain_response)
     finally:
         await _persist_coaching_pipeline_state(
             state,

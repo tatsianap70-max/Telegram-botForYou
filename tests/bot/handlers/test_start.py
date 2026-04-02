@@ -392,7 +392,10 @@ async def test_cmd_start_new_user_shows_legal_request_before_onboarding(
     mock_message: MagicMock,
     mock_l10n_ru: MagicMock,
 ) -> None:
-    """Тест: новый пользователь сначала получает legal request, без onboarding-экрана."""
+    """Тест: новый пользователь сначала получает legal request.
+
+    Onboarding-экран на этом шаге не показывается.
+    """
     from src.services.referral_service import ReferralResult
 
     with (
@@ -438,7 +441,7 @@ async def test_cmd_start_existing_user_with_accepted_legal_uses_product_onboardi
     mock_message: MagicMock,
     mock_l10n_ru: MagicMock,
 ) -> None:
-    """Тест: существующий пользователь с уже принятыми условиями видит product onboarding."""
+    """Тест: пользователь с уже принятым legal видит product onboarding."""
     with (
         patch("src.bot.handlers.start.DatabaseSession") as mock_session_cls,
         patch("src.bot.handlers.start.UserRepository") as mock_repo_cls,

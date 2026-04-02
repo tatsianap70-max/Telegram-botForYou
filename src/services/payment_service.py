@@ -417,7 +417,7 @@ class PaymentService:
         # Создаём новый платёж для автопродления
         # Используем сумму и валюту из вебхука, либо fallback на оригинальный платёж
         amount = result.amount if result.amount is not None else original_payment.amount
-        currency = result.currency if result.currency else original_payment.currency
+        currency = result.currency or original_payment.currency
 
         metadata = {
             "tariff_slug": original_payment.tariff_slug,

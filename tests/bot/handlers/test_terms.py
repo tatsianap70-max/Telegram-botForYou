@@ -33,6 +33,7 @@ from src.bot.handlers.terms import (
     cmd_terms,
     show_terms_acceptance_request,
 )
+from src.bot.states import ChatGPTStates
 from src.db.models.user import User as DbUser
 from src.utils.i18n import Localization
 
@@ -388,7 +389,7 @@ async def test_callback_start_dialog_moves_to_chat_flow(
     mock_l10n_ru: MagicMock,
     mock_fsm_context: FSMContext,
 ) -> None:
-    """Тест: кнопка onboarding переводит пользователя в выбор модели chat."""
+    """Тест: кнопка onboarding сразу переводит в основной chat flow."""
     ai_service = MagicMock()
     ai_service.get_available_models.return_value = {
         "gpt-4o-mini": SimpleNamespace(
@@ -405,13 +406,18 @@ async def test_callback_start_dialog_moves_to_chat_flow(
         ai_service=ai_service,
     )
 
-    mock_fsm_context.update_data.assert_called_once_with({"onboarding_completed": True})
+    mock_fsm_context.update_data.assert_called_once_with(
+        {"onboarding_completed": True, "model_key": "gpt-4o-mini"}
+    )
     mock_fsm_context.set_state.assert_called_once()
+    assert (
+        mock_fsm_context.set_state.call_args.args[0]
+        == ChatGPTStates.waiting_for_message
+    )
+    mock_callback.message.edit_reply_markup.assert_called_once_with(reply_markup=None)
     mock_callback.answer.assert_called_once()
-    mock_callback.message.answer.assert_called_once()
-    call_args = mock_callback.message.answer.call_args
-    assert "Выберите модель" in call_args.args[0]
-    assert call_args.kwargs["reply_markup"] is not None
+    mock_callback.message.answer.assert_not_called()
+    mock_callback.message.answer_photo.assert_not_called()
 
 
 @pytest.mark.asyncio

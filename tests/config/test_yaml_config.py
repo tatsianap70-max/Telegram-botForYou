@@ -307,7 +307,12 @@ models:
       max_tokens: 4096
       temperature: 0.7
 """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix=".yaml",
+        delete=False,
+    ) as f:
         f.write(yaml_content)
         temp_path = f.name
 

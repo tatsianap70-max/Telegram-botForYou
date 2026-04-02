@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +37,7 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class RenewalResult(str, Enum):
+class RenewalResult(StrEnum):
     """Результат попытки продления подписки."""
 
     SUCCESS = "success"  # Платёж прошёл, подписка продлена

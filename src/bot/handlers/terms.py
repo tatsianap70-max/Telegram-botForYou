@@ -13,6 +13,8 @@
 3. Если документы не настроены — показываем предупреждение
 """
 
+from collections.abc import Mapping
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -26,7 +28,6 @@ from aiogram.types import (
     Message,
 )
 
-from src.bot.keyboards import create_model_selection_keyboard
 from src.bot.keyboards.inline.legal import (
     create_legal_documents_keyboard,
     create_terms_acceptance_keyboard,
@@ -72,6 +73,24 @@ def _create_start_dialog_keyboard(l10n: Localization) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def _is_chat_generation_type(generation_type: object) -> bool:
+    """Проверить, что тип генерации относится к chat."""
+    if isinstance(generation_type, str):
+        return generation_type == GENERATION_TYPE_CHAT
+    return getattr(generation_type, "value", None) == GENERATION_TYPE_CHAT
+
+
+def _resolve_default_chat_model_key(
+    available_models: Mapping[str, object],
+) -> str | None:
+    """Выбрать дефолтную chat-модель в порядке конфигурации."""
+    for model_key, model_config in available_models.items():
+        generation_type = getattr(model_config, "generation_type", None)
+        if _is_chat_generation_type(generation_type):
+            return model_key
+    return None
 
 
 @router.message(Command("terms"))
@@ -230,20 +249,21 @@ async def callback_start_dialog(
         ai_service = create_ai_service()
 
     available_models = ai_service.get_available_models()
-    keyboard = create_model_selection_keyboard(available_models, GENERATION_TYPE_CHAT)
+    model_key = _resolve_default_chat_model_key(available_models)
 
-    if not keyboard.inline_keyboard:
-        await callback.answer()
-        await callback.message.answer(l10n.get("no_models_available"))
+    if model_key is None:
+        await callback.answer(l10n.get("no_models_available"), show_alert=True)
         return
 
-    await state.update_data({ONBOARDING_COMPLETED_KEY: True})
-    await state.set_state(ChatGPTStates.waiting_for_model_selection)
-    await callback.answer()
-    await callback.message.answer(
-        l10n.get("chatgpt_choose_model"),
-        reply_markup=keyboard,
+    await state.update_data(
+        {
+            ONBOARDING_COMPLETED_KEY: True,
+            "model_key": model_key,
+        }
     )
+    await state.set_state(ChatGPTStates.waiting_for_message)
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer()
 
 
 async def show_terms_acceptance_request(

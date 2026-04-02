@@ -565,7 +565,7 @@ legal:
   #
   # Шаблон документа: docs/legal/privacy_policy_template.md
   # Оставьте пустым, если документы ещё не готовы (бот предупредит о настройке).
-  privacy_policy_url: "https://example.com/privacy"
+  privacy_policy_url: "https://loving-building-6ed.notion.site/33657f68f58580ebb9edc0a4f0b3c291"
 
   # Ссылка на Пользовательское соглашение (оферту).
   # Документ должен быть доступен по этой ссылке всем пользователям.
@@ -574,7 +574,7 @@ legal:
   #
   # Шаблон документа: docs/legal/terms_of_service_template.md
   # Оставьте пустым, если документы ещё не готовы.
-  terms_of_service_url: "https://example.com/terms"
+  terms_of_service_url: "https://loving-building-6ed.notion.site/33657f68f58580c28f5bc4df83eeea20"
 
 
 # ==============================================================================

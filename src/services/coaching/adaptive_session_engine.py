@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from src.services.coaching.adaptive_session_rules import (
     APPROVE_SWITCH_MARKERS,
+    CLARIFICATION_MARKERS,
     CLEAN_LANGUAGE_HINTS,
     CRISIS_MARKERS,
     DECLINE_SWITCH_MARKERS,
@@ -255,6 +256,15 @@ class AdaptiveSessionEngine:
         if context.stop_processing:
             return
 
+        if self._is_clarification_input(context.normalized_text):
+            context.step_type = "state_clarification"
+            state.no_progress_turns = 0
+            recent = state.recent_step_types[-self._max_recent_steps :]
+            state.recent_step_types = [*recent, context.step_type][
+                -self._max_recent_steps :
+            ]
+            return
+
         step_type = self._derive_step_type(state, context.request_type)
         recent = state.recent_step_types[-self._max_recent_steps :]
         if recent and recent[-1] == step_type:
@@ -294,6 +304,11 @@ class AdaptiveSessionEngine:
         }:
             return
 
+        if self._is_clarification_input(context.normalized_text):
+            context.step_type = "state_clarification"
+            context.deep_path_allowed = False
+            return
+
         self._update_completion_flags(state, context.normalized_text)
         if contains_any(context.normalized_text, INSIGHT_MARKERS):
             self._manager.register_insight(state)
@@ -329,7 +344,15 @@ class AdaptiveSessionEngine:
             context.step_type = "state_clarification"
             return True
 
-        emotional_entry_markers = ("груст", "тревож", "страш", "больно", "тоск")
+        emotional_entry_markers = (
+            "груст",
+            "тревож",
+            "страш",
+            "больно",
+            "тоск",
+            "волн",
+            "пережив",
+        )
         has_emotional_entry = contains_any(
             context.normalized_text,
             emotional_entry_markers,
@@ -338,6 +361,11 @@ class AdaptiveSessionEngine:
             context.step_type = "emotion_contact"
             return True
         return False
+
+    @staticmethod
+    def _is_clarification_input(normalized_text: str) -> bool:
+        """Определить запрос на переформулировку/упрощение вопроса."""
+        return contains_any(normalized_text, CLARIFICATION_MARKERS)
 
     def _response_planner_stage(
         self,

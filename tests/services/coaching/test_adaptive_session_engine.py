@@ -252,3 +252,47 @@ def test_first_turn_pattern_input_keeps_structured_progression() -> None:
 
     assert result.state.stage == SessionStage.TENSION_REDUCTION
     assert result.request_type == RequestType.REPEATING_PATTERN
+
+
+def test_first_turn_worry_is_recognized_as_emotional_soft_entry() -> None:
+    """Маркер «волнуюсь» должен вести в мягкий эмоциональный вход."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+
+    result = engine.process_turn(state, "Я очень волнуюсь, что нет работы.")
+
+    assert result.state.stage == SessionStage.TOPIC_DEFINITION
+    assert result.response_plan.step_type == "emotion_contact"
+
+
+def test_clarification_input_holds_stage_and_step() -> None:
+    """Запрос «не поняла вопрос» не должен продвигать стадию и углублять ход."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(
+        mode=SessionMode.FREE,
+        stage=SessionStage.TENSION_REDUCTION,
+        topic_id="topic-1",
+    )
+
+    result = engine.process_turn(state, "Не поняла вопрос.")
+
+    assert result.request_type == RequestType.CONFUSION
+    assert result.response_plan.step_type == "state_clarification"
+    assert result.state.stage == SessionStage.TENSION_REDUCTION
+    assert result.selected_scenario == ScenarioType.CLARITY_FALLBACK
+
+
+def test_rephrase_request_is_treated_as_clarification() -> None:
+    """Фраза «переформулируйте, пожалуйста» должна идти как clarification."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(
+        mode=SessionMode.FREE,
+        stage=SessionStage.MECHANISM_DISCOVERY,
+        topic_id="topic-1",
+    )
+
+    result = engine.process_turn(state, "Переформулируйте, пожалуйста.")
+
+    assert result.request_type == RequestType.CONFUSION
+    assert result.response_plan.step_type == "state_clarification"
+    assert result.state.stage == SessionStage.MECHANISM_DISCOVERY

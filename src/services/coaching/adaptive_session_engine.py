@@ -256,21 +256,21 @@ class AdaptiveSessionEngine:
         if context.stop_processing:
             return
 
-        is_early_clarification_path = self._is_early_turn(state) and (
-            self._is_clarification_input(context.normalized_text)
-            or self._is_uncertainty_input(context.normalized_text)
-            or context.request_type in {RequestType.CONFUSION, RequestType.OVERLOAD}
-        )
-        if is_early_clarification_path:
-            context.step_type = "state_clarification"
-            state.no_progress_turns = 0
-            recent = state.recent_step_types[-self._max_recent_steps :]
-            state.recent_step_types = [*recent, context.step_type][
-                -self._max_recent_steps :
-            ]
-            return
+        if self._is_early_turn(state):
+            if state.emotion_result.state == EmotionState.CONFUSION:
+                self._set_step_type(state, context, "state_clarification")
+                return
+            if self._is_early_emotional_state(state.emotion_result.state):
+                self._set_step_type(state, context, "emotion_contact")
+                return
 
         step_type = self._derive_step_type(state, context.request_type)
+        if (
+            self._is_early_turn(state)
+            and state.stage in {SessionStage.TOPIC_DEFINITION, SessionStage.TENSION_REDUCTION}
+            and step_type == "clarity_structuring"
+        ):
+            step_type = "state_clarification"
         recent = state.recent_step_types[-self._max_recent_steps :]
         if recent and recent[-1] == step_type:
             step_type = self._alternate_step_type(step_type)
@@ -318,6 +318,14 @@ class AdaptiveSessionEngine:
         if self._should_hold_first_turn_stage(state, context):
             return
 
+        if self._is_early_turn(state) and state.stage in {
+            SessionStage.TOPIC_DEFINITION,
+            SessionStage.TENSION_REDUCTION,
+            SessionStage.MECHANISM_DISCOVERY,
+        }:
+            self._advance_stage(state, allow_deep=False)
+            return
+
         self._update_completion_flags(state, context.normalized_text)
         if contains_any(context.normalized_text, INSIGHT_MARKERS):
             self._manager.register_insight(state)
@@ -344,37 +352,56 @@ class AdaptiveSessionEngine:
         if not AdaptiveSessionEngine._is_early_turn(state):
             return False
 
-        needs_clarification = (
-            AdaptiveSessionEngine._is_clarification_input(context.normalized_text)
-            or AdaptiveSessionEngine._is_uncertainty_input(context.normalized_text)
-            or context.request_type in {RequestType.CONFUSION, RequestType.OVERLOAD}
+        is_early_entry_stage = state.stage in {
+            SessionStage.TOPIC_DEFINITION,
+            SessionStage.TENSION_REDUCTION,
+        }
+        if is_early_entry_stage and context.step_type == "clarity_structuring":
+            context.step_type = "state_clarification"
+
+        needs_clarification = context.step_type == "state_clarification" or (
+            state.emotion_result.state == EmotionState.CONFUSION
         )
         if needs_clarification:
             context.step_type = "state_clarification"
             context.deep_path_allowed = False
+            if is_early_entry_stage and state.stage != SessionStage.TOPIC_DEFINITION:
+                state.stage = SessionStage.TOPIC_DEFINITION
             return True
 
-        if state.stage is not SessionStage.TOPIC_DEFINITION:
-            return False
-
-        emotional_entry_markers = (
-            "груст",
-            "тревож",
-            "страш",
-            "больно",
-            "тоск",
-            "волн",
-            "пережив",
-        )
-        has_emotional_entry = contains_any(
-            context.normalized_text,
-            emotional_entry_markers,
-        )
-        if has_emotional_entry:
+        if (
+            context.step_type == "emotion_contact"
+            or AdaptiveSessionEngine._is_early_emotional_state(
+                state.emotion_result.state
+            )
+        ):
             context.step_type = "emotion_contact"
             context.deep_path_allowed = False
+            if is_early_entry_stage and state.stage != SessionStage.TOPIC_DEFINITION:
+                state.stage = SessionStage.TOPIC_DEFINITION
             return True
         return False
+
+    def _set_step_type(
+        self,
+        state: SessionState,
+        context: _PipelineContext,
+        step_type: str,
+    ) -> None:
+        """Установить тип шага и синхронизировать anti-loop состояние."""
+        context.step_type = step_type
+        state.no_progress_turns = 0
+        recent = state.recent_step_types[-self._max_recent_steps :]
+        state.recent_step_types = [*recent, step_type][-self._max_recent_steps :]
+
+    @staticmethod
+    def _is_early_emotional_state(emotion_state: EmotionState) -> bool:
+        """Эмоции для мягкого входа на первых ходах."""
+        return emotion_state in {
+            EmotionState.ANXIETY,
+            EmotionState.DECISION_FEAR,
+            EmotionState.OVERLOAD,
+        }
 
     @staticmethod
     def _is_clarification_input(normalized_text: str) -> bool:
@@ -521,6 +548,45 @@ class AdaptiveSessionEngine:
                 scores[emotion] = count
 
         if not scores:
+            overload_markers = ("перегруз", "не тяну", "давит", "слишком много")
+            if contains_any(normalized_text, overload_markers):
+                return EmotionDetectionResult(
+                    state=EmotionState.OVERLOAD,
+                    confidence=0.7,
+                    is_confident=True,
+                    fallback_to_clarity=False,
+                    clarification_attempts=0,
+                )
+
+            anxiety_markers = (
+                "тревог",
+                "боюсь",
+                "страш",
+                "волнуюсь",
+                "волнует",
+                "переживаю",
+                "тревожусь",
+                "груст",
+            )
+            if contains_any(normalized_text, anxiety_markers):
+                return EmotionDetectionResult(
+                    state=EmotionState.ANXIETY,
+                    confidence=0.7,
+                    is_confident=True,
+                    fallback_to_clarity=False,
+                    clarification_attempts=0,
+                )
+
+            if self._is_clarification_input(
+                normalized_text
+            ) or self._is_uncertainty_input(normalized_text):
+                return EmotionDetectionResult(
+                    state=EmotionState.CONFUSION,
+                    confidence=0.65,
+                    is_confident=True,
+                    fallback_to_clarity=False,
+                    clarification_attempts=0,
+                )
             attempts = previous.clarification_attempts + 1
             return EmotionDetectionResult(
                 state=EmotionState.UNKNOWN,

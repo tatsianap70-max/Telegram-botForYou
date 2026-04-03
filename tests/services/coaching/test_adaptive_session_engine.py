@@ -279,7 +279,7 @@ def test_clarification_input_holds_stage_and_step() -> None:
 
     assert result.request_type == RequestType.CONFUSION
     assert result.response_plan.step_type == "state_clarification"
-    assert result.state.stage == SessionStage.TENSION_REDUCTION
+    assert result.state.stage == SessionStage.TOPIC_DEFINITION
     assert result.selected_scenario == ScenarioType.CLARITY_FALLBACK
 
 

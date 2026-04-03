@@ -230,6 +230,24 @@ def test_anti_loop_not_activated_too_early() -> None:
     assert decision.reason == "insufficient_context"
 
 
+def test_anti_loop_not_activated_on_second_turn_uncertainty_entry() -> None:
+    """На 2-м ходе 'запуталась -> не знаю' anti-loop еще не должен вмешиваться."""
+    state = _build_state(
+        question_count=2,
+        contentful_message_count=2,
+        no_progress_turns=2,
+        recent_step_types=["state_clarification", "state_clarification"],
+    )
+    turns = ["Я запуталась, не знаю, что делать.", "Не знаю"]
+
+    decision = evaluate_anti_loop(state, turns)
+
+    assert not decision.requires_intervention
+    assert decision.signal_strength is SignalStrength.NONE
+    assert decision.strategy is RecoveryStrategy.NONE
+    assert decision.reason == "early_uncertainty_entry"
+
+
 def test_anti_loop_does_not_interfere_with_new_topic() -> None:
     """Если pending_topic уже задан, anti-loop не должен вмешиваться в цикл."""
     state = _build_state(
@@ -286,6 +304,7 @@ def test_reason_is_neutral_and_non_interpretive() -> None:
     allowed_reasons = {
         "none",
         "insufficient_context",
+        "early_uncertainty_entry",
         "weak_single_signal",
         "repeated_user_angle",
         "repeated_system_angle",

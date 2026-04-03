@@ -298,6 +298,9 @@ class AdaptiveSessionEngine:
         if contains_any(context.normalized_text, INSIGHT_MARKERS):
             self._manager.register_insight(state)
 
+        if self._should_hold_first_turn_stage(state, context):
+            return
+
         if context.load_limiter_triggered:
             self._move_to_reflection_summary(state)
         else:
@@ -310,6 +313,31 @@ class AdaptiveSessionEngine:
             elif context.load_limiter_triggered:
                 state.completion_criteria.is_completed = True
                 state.stage = SessionStage.COMPLETION
+
+    @staticmethod
+    def _should_hold_first_turn_stage(
+        state: SessionState,
+        context: _PipelineContext,
+    ) -> bool:
+        """Удержать первый ход в topic_definition для более мягкого входа."""
+        if state.stage is not SessionStage.TOPIC_DEFINITION:
+            return False
+        if state.question_count != 1:
+            return False
+
+        if context.request_type in {RequestType.CONFUSION, RequestType.OVERLOAD}:
+            context.step_type = "state_clarification"
+            return True
+
+        emotional_entry_markers = ("груст", "тревож", "страш", "больно", "тоск")
+        has_emotional_entry = contains_any(
+            context.normalized_text,
+            emotional_entry_markers,
+        )
+        if has_emotional_entry:
+            context.step_type = "emotion_contact"
+            return True
+        return False
 
     def _response_planner_stage(
         self,

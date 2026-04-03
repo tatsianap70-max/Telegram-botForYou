@@ -160,6 +160,8 @@ def evaluate_anti_loop(
         return _build_no_loop_decision("insufficient_context")
     if not _has_minimum_context(state, turns):
         return _build_no_loop_decision("insufficient_context")
+    if _is_early_uncertainty_entry(state, turns):
+        return _build_no_loop_decision("early_uncertainty_entry")
 
     signals = detect_loop_signals(state, turns)
     if signals.signal_strength is SignalStrength.NONE:
@@ -257,6 +259,28 @@ def _has_minimum_context(state: SessionState, turns: Sequence[str]) -> bool:
     no_progress_turns = _state_int(state, "no_progress_turns")
     has_repeat_signal = no_progress_turns >= 2 or _is_repeated_user_angle(turns)
     return has_repeat_signal or _is_repeated_system_angle(recent_step_types)
+
+
+def _is_early_uncertainty_entry(state: SessionState, turns: Sequence[str]) -> bool:
+    """Блокировать anti-loop на раннем входе «запуталась/не знаю»."""
+    if _state_int(state, "question_count") > 2:
+        return False
+    if len(turns) < 2:
+        return False
+
+    uncertainty_markers = ("не знаю", "запутал", "не понимаю", "неясно")
+    previous_turn = turns[-2]
+    latest_turn = turns[-1]
+
+    previous_uncertain = (
+        _contains_any(previous_turn, uncertainty_markers)
+        or _is_trivial_short_turn(previous_turn)
+    )
+    latest_uncertain = (
+        _contains_any(latest_turn, uncertainty_markers)
+        or _is_trivial_short_turn(latest_turn)
+    )
+    return previous_uncertain and latest_uncertain
 
 
 def _exceeded_max_repeat_policy(state: SessionState) -> bool:
@@ -484,4 +508,3 @@ __all__ = [
     "select_recovery_strategy",
     "should_soft_close",
 ]
-

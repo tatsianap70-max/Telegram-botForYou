@@ -216,3 +216,39 @@ def test_antiloop_changes_step_type_when_repeated() -> None:
     )
 
     assert result.response_plan.step_type != "structured_progress"
+
+
+def test_first_turn_confusion_keeps_topic_definition_for_soft_entry() -> None:
+    """На первом ходе с запутанностью не уходим сразу в fact/interpretation."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+
+    result = engine.process_turn(state, "Я запуталась, не знаю, что делать.")
+
+    assert result.state.stage == SessionStage.TOPIC_DEFINITION
+    assert result.response_plan.step_type == "state_clarification"
+
+
+def test_first_turn_emotion_keeps_topic_definition_for_emotion_contact() -> None:
+    """На первом эмоциональном ходе удерживаем мягкий вход в тему."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+
+    result = engine.process_turn(state, "Мне грустно и тревожно.")
+
+    assert result.state.stage == SessionStage.TOPIC_DEFINITION
+    assert result.response_plan.step_type == "emotion_contact"
+
+
+def test_first_turn_pattern_input_keeps_structured_progression() -> None:
+    """Осознанный паттерновый вход остается в структурной ветке."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+
+    result = engine.process_turn(
+        state,
+        "Хочу понять, почему повторяется один и тот же сценарий.",
+    )
+
+    assert result.state.stage == SessionStage.TENSION_REDUCTION
+    assert result.request_type == RequestType.REPEATING_PATTERN

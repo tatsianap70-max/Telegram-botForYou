@@ -150,6 +150,7 @@ def test_load_limiter_disables_deep_path_even_in_premium() -> None:
         stage=SessionStage.MECHANISM_DISCOVERY,
         topic_id="topic-1",
     )
+    state.question_count = 3
     state.low_engagement_turns = 1
 
     result = engine.process_turn(
@@ -296,3 +297,31 @@ def test_rephrase_request_is_treated_as_clarification() -> None:
     assert result.request_type == RequestType.CONFUSION
     assert result.response_plan.step_type == "state_clarification"
     assert result.state.stage == SessionStage.MECHANISM_DISCOVERY
+
+
+def test_early_uncertainty_turn_two_does_not_complete_session() -> None:
+    """На 2-м ходе «не знаю» не должен переводить сессию в completion."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+
+    first = engine.process_turn(state, "Я запуталась.")
+    second = engine.process_turn(state, "Не знаю.")
+
+    assert first.state.stage == SessionStage.TOPIC_DEFINITION
+    assert second.reply_type == EngineReplyType.COACH_MESSAGE
+    assert second.state.stage == SessionStage.TOPIC_DEFINITION
+    assert second.response_plan.step_type == "state_clarification"
+
+
+def test_no_early_completion_on_first_three_short_turns() -> None:
+    """На первых 3 коротких ходах не допускается ранний completion-path."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+
+    turn_one = engine.process_turn(state, "Мне грустно.")
+    turn_two = engine.process_turn(state, "Пусто внутри.")
+    turn_three = engine.process_turn(state, "Не знаю.")
+
+    assert turn_one.state.stage != SessionStage.COMPLETION
+    assert turn_two.state.stage != SessionStage.COMPLETION
+    assert turn_three.state.stage != SessionStage.COMPLETION

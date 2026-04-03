@@ -29,6 +29,15 @@ _SHORT_REPEAT_MARKERS: tuple[str, ...] = (
     "никак",
 )
 
+_CLARIFICATION_MARKERS: tuple[str, ...] = (
+    "не поняла",
+    "не понимаю",
+    "не поняла вопрос",
+    "не понимаю вопрос",
+    "переформулируйте",
+    "объясните иначе",
+)
+
 _STAGNATION_MARKERS: tuple[str, ...] = (
     "ничего не меняется",
     "все то же самое",
@@ -158,10 +167,14 @@ def evaluate_anti_loop(
     turns = _prepare_turns(recent_user_turns)
     if len(turns) < 2:
         return _build_no_loop_decision("insufficient_context")
-    if not _has_minimum_context(state, turns):
-        return _build_no_loop_decision("insufficient_context")
+    if _is_clarification_chain(turns):
+        return _build_no_loop_decision("clarification_chain_guard")
     if _is_early_uncertainty_entry(state, turns):
         return _build_no_loop_decision("early_uncertainty_entry")
+    if _is_early_turn(state):
+        return _build_no_loop_decision("early_turn_guard")
+    if not _has_minimum_context(state, turns):
+        return _build_no_loop_decision("insufficient_context")
 
     signals = detect_loop_signals(state, turns)
     if signals.signal_strength is SignalStrength.NONE:
@@ -263,9 +276,11 @@ def _has_minimum_context(state: SessionState, turns: Sequence[str]) -> bool:
 
 def _is_early_uncertainty_entry(state: SessionState, turns: Sequence[str]) -> bool:
     """Блокировать anti-loop на раннем входе «запуталась/не знаю»."""
-    if _state_int(state, "question_count") > 2:
+    if _state_int(state, "question_count") > 3:
         return False
     if len(turns) < 2:
+        return False
+    if _has_minimal_user_context(turns):
         return False
 
     uncertainty_markers = ("не знаю", "запутал", "не понимаю", "неясно")
@@ -281,6 +296,31 @@ def _is_early_uncertainty_entry(state: SessionState, turns: Sequence[str]) -> bo
         or _is_trivial_short_turn(latest_turn)
     )
     return previous_uncertain and latest_uncertain
+
+
+def _is_early_turn(state: SessionState) -> bool:
+    """Ранние ходы (T1-T3), где anti-loop выключен policy-правилом."""
+    return _state_int(state, "question_count") <= 3
+
+
+def _is_clarification_chain(turns: Sequence[str]) -> bool:
+    """Определить clarification-цепочку для блокировки anti-loop."""
+    if not turns:
+        return False
+    latest = turns[-1]
+    if _contains_any(latest, _CLARIFICATION_MARKERS):
+        return True
+    if len(turns) >= 2:
+        previous = turns[-2]
+        previous_is_clarification = _contains_any(previous, _CLARIFICATION_MARKERS)
+        return previous_is_clarification and _is_trivial_short_turn(latest)
+    return False
+
+
+def _has_minimal_user_context(turns: Sequence[str]) -> bool:
+    """Проверить появление минимального контекста (факт/инсайт/шаг)."""
+    has_new_fact, has_new_insight, has_new_step = _detect_progress_novelty(turns)
+    return has_new_fact or has_new_insight or has_new_step
 
 
 def _exceeded_max_repeat_policy(state: SessionState) -> bool:

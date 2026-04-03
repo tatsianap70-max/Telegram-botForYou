@@ -256,7 +256,12 @@ class AdaptiveSessionEngine:
         if context.stop_processing:
             return
 
-        if self._is_clarification_input(context.normalized_text):
+        is_early_clarification_path = self._is_early_turn(state) and (
+            self._is_clarification_input(context.normalized_text)
+            or self._is_uncertainty_input(context.normalized_text)
+            or context.request_type in {RequestType.CONFUSION, RequestType.OVERLOAD}
+        )
+        if is_early_clarification_path:
             context.step_type = "state_clarification"
             state.no_progress_turns = 0
             recent = state.recent_step_types[-self._max_recent_steps :]
@@ -284,6 +289,12 @@ class AdaptiveSessionEngine:
         if context.stop_processing:
             return
 
+        if self._is_early_turn(state):
+            state.low_engagement_turns = 0
+            context.load_limiter_triggered = False
+            state.load_limiter_active = False
+            return
+
         low_engagement = is_low_engagement(context.normalized_text, context.contentful)
         state.low_engagement_turns = (
             state.low_engagement_turns + 1 if low_engagement else 0
@@ -304,17 +315,12 @@ class AdaptiveSessionEngine:
         }:
             return
 
-        if self._is_clarification_input(context.normalized_text):
-            context.step_type = "state_clarification"
-            context.deep_path_allowed = False
+        if self._should_hold_first_turn_stage(state, context):
             return
 
         self._update_completion_flags(state, context.normalized_text)
         if contains_any(context.normalized_text, INSIGHT_MARKERS):
             self._manager.register_insight(state)
-
-        if self._should_hold_first_turn_stage(state, context):
-            return
 
         if context.load_limiter_triggered:
             self._move_to_reflection_summary(state)
@@ -334,15 +340,22 @@ class AdaptiveSessionEngine:
         state: SessionState,
         context: _PipelineContext,
     ) -> bool:
-        """Удержать первый ход в topic_definition для более мягкого входа."""
-        if state.stage is not SessionStage.TOPIC_DEFINITION:
-            return False
-        if state.question_count != 1:
+        """Удержать ранние ходы в безопасном входном режиме."""
+        if not AdaptiveSessionEngine._is_early_turn(state):
             return False
 
-        if context.request_type in {RequestType.CONFUSION, RequestType.OVERLOAD}:
+        needs_clarification = (
+            AdaptiveSessionEngine._is_clarification_input(context.normalized_text)
+            or AdaptiveSessionEngine._is_uncertainty_input(context.normalized_text)
+            or context.request_type in {RequestType.CONFUSION, RequestType.OVERLOAD}
+        )
+        if needs_clarification:
             context.step_type = "state_clarification"
+            context.deep_path_allowed = False
             return True
+
+        if state.stage is not SessionStage.TOPIC_DEFINITION:
+            return False
 
         emotional_entry_markers = (
             "груст",
@@ -359,6 +372,7 @@ class AdaptiveSessionEngine:
         )
         if has_emotional_entry:
             context.step_type = "emotion_contact"
+            context.deep_path_allowed = False
             return True
         return False
 
@@ -366,6 +380,17 @@ class AdaptiveSessionEngine:
     def _is_clarification_input(normalized_text: str) -> bool:
         """Определить запрос на переформулировку/упрощение вопроса."""
         return contains_any(normalized_text, CLARIFICATION_MARKERS)
+
+    @staticmethod
+    def _is_uncertainty_input(normalized_text: str) -> bool:
+        """Определить ранний вход неопределенности/растерянности."""
+        uncertainty_markers = ("не знаю", "запутал", "запуталась", "неясно")
+        return contains_any(normalized_text, uncertainty_markers)
+
+    @staticmethod
+    def _is_early_turn(state: SessionState) -> bool:
+        """Ранние ходы для мягкого входа: первые 3 сообщения цикла."""
+        return state.question_count <= 3
 
     def _response_planner_stage(
         self,

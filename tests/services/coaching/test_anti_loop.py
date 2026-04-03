@@ -248,6 +248,45 @@ def test_anti_loop_not_activated_on_second_turn_uncertainty_entry() -> None:
     assert decision.reason == "early_uncertainty_entry"
 
 
+def test_anti_loop_disabled_for_all_early_turns_t1_t3() -> None:
+    """На T1-T3 anti-loop должен быть выключен даже при повторе угла."""
+    state = _build_state(
+        question_count=3,
+        contentful_message_count=3,
+        no_progress_turns=3,
+        recent_step_types=["clarity_structuring", "clarity_structuring"],
+    )
+    turns = [
+        "Опять одно и то же в этой ситуации.",
+        "Опять одно и то же в этой ситуации.",
+    ]
+
+    decision = evaluate_anti_loop(state, turns)
+
+    assert not decision.requires_intervention
+    assert decision.signal_strength is SignalStrength.NONE
+    assert decision.strategy is RecoveryStrategy.NONE
+    assert decision.reason == "early_turn_guard"
+
+
+def test_anti_loop_disabled_for_clarification_chain() -> None:
+    """Clarification-цепочка не должна включать anti-loop."""
+    state = _build_state(
+        question_count=5,
+        contentful_message_count=5,
+        no_progress_turns=3,
+        recent_step_types=["state_clarification", "state_clarification"],
+    )
+    turns = ["Не поняла вопрос.", "Переформулируйте, пожалуйста."]
+
+    decision = evaluate_anti_loop(state, turns)
+
+    assert not decision.requires_intervention
+    assert decision.signal_strength is SignalStrength.NONE
+    assert decision.strategy is RecoveryStrategy.NONE
+    assert decision.reason == "clarification_chain_guard"
+
+
 def test_anti_loop_does_not_interfere_with_new_topic() -> None:
     """Если pending_topic уже задан, anti-loop не должен вмешиваться в цикл."""
     state = _build_state(
@@ -305,6 +344,8 @@ def test_reason_is_neutral_and_non_interpretive() -> None:
         "none",
         "insufficient_context",
         "early_uncertainty_entry",
+        "early_turn_guard",
+        "clarification_chain_guard",
         "weak_single_signal",
         "repeated_user_angle",
         "repeated_system_angle",

@@ -54,6 +54,56 @@ COACHING_STATE_KEY = "coaching_session_state"
 COACHING_RECENT_TURNS_KEY = "coaching_recent_user_turns"
 COACHING_LAST_PLAN_KEY = "coaching_last_response_plan"
 ONBOARDING_COMPLETED_KEY = "onboarding_completed"
+MAX_DOMAIN_REPLY_CHARS = 280
+
+
+def _compact_text(value: str) -> str:
+    """Нормализовать пробелы и переносы в короткий текст."""
+    return " ".join(value.split())
+
+
+def _truncate_reply(value: str, limit: int = MAX_DOMAIN_REPLY_CHARS) -> str:
+    """Ограничить длину реплики без обрыва слова."""
+    text = value.strip()
+    if len(text) <= limit:
+        return text
+    shortened = text[:limit].rsplit(" ", 1)[0].rstrip(",;:-")
+    if not shortened:
+        shortened = text[:limit]
+    if shortened and not shortened.endswith((".", "!", "?")):
+        shortened += "."
+    return shortened
+
+
+def _ensure_single_question(value: str) -> str:
+    """Оставить в реплике не больше одного вопроса."""
+    first_q = value.find("?")
+    if first_q == -1:
+        return value
+    prefix = value[: first_q + 1]
+    suffix = value[first_q + 1 :].replace("?", ".")
+    return f"{prefix}{suffix}"
+
+
+def _compose_compact_reply(
+    reflection: str | None = None,
+    question: str | None = None,
+) -> str:
+    """Собрать короткий естественный ответ: отражение + один вопрос."""
+    parts: list[str] = []
+    for candidate in (reflection, question):
+        if not candidate:
+            continue
+        cleaned = _compact_text(candidate)
+        if not cleaned:
+            continue
+        if cleaned not in parts:
+            parts.append(cleaned)
+    reply = " ".join(parts).strip()
+    if not reply:
+        reply = "Похоже, это важная точка. Что сейчас в этом самое главное?"
+    reply = _ensure_single_question(reply)
+    return _truncate_reply(reply)
 
 
 def _compose_anti_loop_response(
@@ -64,19 +114,34 @@ def _compose_anti_loop_response(
 ) -> str:
     """Собрать короткий ответ для anti-loop стратегии без генерации."""
     if strategy == "angle_shift":
-        return (
-            "Давайте посмотрим на это с другого угла: "
-            "какой новый факт здесь важен именно сейчас?"
+        return _compose_compact_reply(
+            "Похоже, полезно чуть сместить угол.",
+            "Какой новый факт здесь важен сейчас?",
         )
     if strategy == "simplify":
-        return "Если упростить до одной точки: что сейчас самое важное?"
+        return _compose_compact_reply(
+            "Похоже, лучше упростить до одной точки.",
+            "Что сейчас здесь самое важное?",
+        )
     if strategy == "meta_question":
-        return "Какой один вопрос может прояснить ситуацию лучше всего?"
+        return _compose_compact_reply(
+            None,
+            "Какой один вопрос сейчас лучше всего прояснит ситуацию?",
+        )
     if strategy == "insight_trigger":
-        return reflection_engine.insight_hypothesis(coaching_state, user_text)
+        return _compose_compact_reply(
+            reflection_engine.insight_hypothesis(coaching_state, user_text),
+            reflection_engine.next_question_prompt(coaching_state, user_text),
+        )
     if strategy == "soft_close":
-        return reflection_engine.soft_landing(coaching_state, user_text)
-    return reflection_engine.next_question_prompt(coaching_state, user_text)
+        return _compose_compact_reply(
+            reflection_engine.soft_landing(coaching_state, user_text),
+            reflection_engine.exit_reflection_question(coaching_state, user_text),
+        )
+    return _compose_compact_reply(
+        reflection_engine.short_reflection(coaching_state, user_text),
+        reflection_engine.next_question_prompt(coaching_state, user_text),
+    )
 
 
 def _compose_domain_response(
@@ -86,21 +151,28 @@ def _compose_domain_response(
 ) -> str:
     """Собрать итоговый текст по domain policy без legacy AI-генерации."""
     reflection_engine = ReflectionEngine()
+    next_step_type = response_plan.next_step_type or ""
 
     if response_plan.should_complete:
+        live_reflection = reflection_engine.short_reflection(coaching_state, user_text)
         if response_plan.completion_stage == SessionStage.REFLECTION_SUMMARY.value:
-            summary = reflection_engine.reflection_summary(coaching_state, user_text)
-            exit_question = reflection_engine.exit_reflection_question(
+            completion_reflection = reflection_engine.reflection_summary(
                 coaching_state,
                 user_text,
             )
-            return f"{summary}\n\n{exit_question}"
-        soft_landing = reflection_engine.soft_landing(coaching_state, user_text)
-        exit_question = reflection_engine.exit_reflection_question(
-            coaching_state,
-            user_text,
+        else:
+            completion_reflection = reflection_engine.soft_landing(
+                coaching_state,
+                user_text,
+            )
+        merged_reflection = _compose_compact_reply(
+            live_reflection,
+            completion_reflection,
         )
-        return f"{soft_landing}\n\n{exit_question}"
+        return _compose_compact_reply(
+            merged_reflection,
+            reflection_engine.exit_reflection_question(coaching_state, user_text),
+        )
 
     if response_plan.reply_type == "anti_loop":
         return _compose_anti_loop_response(
@@ -115,16 +187,23 @@ def _compose_domain_response(
             coaching_state
         ) or build_premium_reflection(coaching_state)
         if premium_text:
-            return premium_text
+            return _compose_compact_reply(_compact_text(premium_text), None)
 
     if response_plan.reply_type == "decision_prompt":
-        return reflection_engine.next_question_prompt(coaching_state, user_text)
+        return _compose_compact_reply(
+            reflection_engine.short_reflection(coaching_state, user_text),
+            reflection_engine.next_question_prompt(coaching_state, user_text),
+        )
+
+    if next_step_type == "pattern_interrupt":
+        return _compose_compact_reply(
+            reflection_engine.insight_hypothesis(coaching_state, user_text),
+            reflection_engine.next_question_prompt(coaching_state, user_text),
+        )
 
     short_reflection = reflection_engine.short_reflection(coaching_state, user_text)
     next_question = reflection_engine.next_question_prompt(coaching_state, user_text)
-    if short_reflection == next_question:
-        return short_reflection
-    return f"{short_reflection}\n\n{next_question}"
+    return _compose_compact_reply(short_reflection, next_question)
 
 
 async def _send_ai_response(message: Message, content: str) -> None:

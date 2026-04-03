@@ -359,6 +359,10 @@ class TestHandleUserMessage:
         answer_text = mock_message.answer.call_args.args[0]
         assert isinstance(answer_text, str)
         assert answer_text
+        assert answer_text.count("?") <= 1
+        assert "\n-" not in answer_text
+        assert "1)" not in answer_text
+        assert len(answer_text) <= 320
 
     @pytest.mark.asyncio
     async def test_handle_user_message_does_not_write_legacy_chat_history_to_db(
@@ -412,6 +416,8 @@ class TestHandleUserMessage:
         sent_text = mock_message.answer.call_args.args[0]
         assert isinstance(sent_text, str)
         assert sent_text
+        assert sent_text.count("?") <= 1
+        assert len(sent_text) <= 320
 
     @pytest.mark.asyncio
     async def test_handle_user_message_sends_response_to_user(

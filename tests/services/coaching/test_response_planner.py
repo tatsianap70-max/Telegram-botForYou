@@ -133,6 +133,87 @@ def test_anti_loop_strategy_used_when_loop_detected() -> None:
     assert not result.should_complete
 
 
+def test_anti_loop_not_activated_on_weak_requires_intervention_only() -> None:
+    """Слабый сигнал без loop/soft-close/CLEAR не активирует anti-loop ветку."""
+    state = _build_state()
+    adaptive = _AdaptiveResult(
+        reply_type="coach_message",
+        response_plan=_AdaptiveResponsePlan(step_type="structured_progress"),
+    )
+    weak_intervention = AntiLoopDecision(
+        loop_detected=False,
+        signal_strength=SignalStrength.WEAK,
+        strategy=RecoveryStrategy.INSIGHT_TRIGGER,
+        should_soft_close=False,
+        reason="stagnation_detected",
+        stagnation_detected=True,
+        requires_intervention=True,
+    )
+
+    result = plan_response(
+        state=state,
+        safety_decision=_safe_decision(),
+        adaptive_engine_result=adaptive,
+        anti_loop_decision=weak_intervention,
+        premium_decision=None,
+    )
+
+    assert result.reply_type == "coach_message"
+    assert result.use_reflection
+    assert result.next_step_type == "structured_progress"
+
+
+def test_anti_loop_activated_on_clear_signal_without_loop_detected() -> None:
+    """Явный CLEAR-сигнал должен активировать anti-loop даже без loop_detected."""
+    state = _build_state()
+    clear_signal = AntiLoopDecision(
+        loop_detected=False,
+        signal_strength=SignalStrength.CLEAR,
+        strategy=RecoveryStrategy.META_QUESTION,
+        should_soft_close=False,
+        reason="stagnation_detected",
+        stagnation_detected=True,
+        requires_intervention=True,
+    )
+
+    result = plan_response(
+        state=state,
+        safety_decision=_safe_decision(),
+        adaptive_engine_result=_AdaptiveResult(),
+        anti_loop_decision=clear_signal,
+        premium_decision=None,
+    )
+
+    assert result.reply_type == "anti_loop"
+    assert result.next_step_type == RecoveryStrategy.META_QUESTION.value
+
+
+def test_anti_loop_activated_on_soft_close_without_loop_detected() -> None:
+    """Soft-close должен активировать anti-loop независимо от loop_detected."""
+    state = _build_state()
+    soft_close = AntiLoopDecision(
+        loop_detected=False,
+        signal_strength=SignalStrength.WEAK,
+        strategy=RecoveryStrategy.SOFT_CLOSE,
+        should_soft_close=True,
+        reason="stagnation_detected",
+        stagnation_detected=True,
+        requires_intervention=True,
+    )
+
+    result = plan_response(
+        state=state,
+        safety_decision=_safe_decision(),
+        adaptive_engine_result=_AdaptiveResult(),
+        anti_loop_decision=soft_close,
+        premium_decision=None,
+    )
+
+    assert result.reply_type == "anti_loop"
+    assert result.should_complete
+    assert result.completion_stage == SessionStage.REFLECTION_SUMMARY.value
+
+
 def test_anti_loop_soft_close_marks_completion() -> None:
     """При soft-close planner должен переводить в завершение."""
     state = _build_state()

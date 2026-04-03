@@ -121,10 +121,14 @@ def _is_anti_loop_active(anti_loop_decision: object | None) -> bool:
     """Проверить, что anti-loop потребовал policy-вмешательство."""
     if anti_loop_decision is None:
         return False
-    return bool(
-        getattr(anti_loop_decision, "loop_detected", False)
-        or getattr(anti_loop_decision, "requires_intervention", False)
+    if bool(getattr(anti_loop_decision, "loop_detected", False)):
+        return True
+    if bool(getattr(anti_loop_decision, "should_soft_close", False)):
+        return True
+    signal_strength = _enum_or_string(
+        getattr(anti_loop_decision, "signal_strength", None)
     )
+    return signal_strength == "clear"
 
 
 def _is_anti_loop_soft_close(anti_loop_decision: object | None) -> bool:

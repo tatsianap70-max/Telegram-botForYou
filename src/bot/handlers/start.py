@@ -96,9 +96,9 @@ def _create_start_language_keyboard(l10n: Localization) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def _should_show_start_language_gate(created: bool) -> bool:
+def _should_show_start_language_gate(has_saved_language: bool) -> bool:
     """Проверить, нужен ли явный language gate в /start."""
-    if not created or not Localization.is_enabled():
+    if has_saved_language or not Localization.is_enabled():
         return False
     available_languages = set(Localization.get_available_languages())
     return set(ENTRY_LANGUAGES).issubset(available_languages)
@@ -214,6 +214,8 @@ async def cmd_start(
 
     # Флаг: нужно ли показать запрос на согласие
     needs_terms_acceptance = False
+    # Флаг: есть ли у пользователя уже сохранённый язык до текущего /start.
+    has_saved_language = False
 
     # Сохраняем/обновляем пользователя в БД
     # Переменная для хранения бонуса (начисляется только после согласия)
@@ -230,6 +232,12 @@ async def cmd_start(
             last_name=tg_user.last_name,
             language=detected_language,
             source=source,
+        )
+        user_language = getattr(user, "language", None)
+        has_saved_language = (
+            not created
+            and isinstance(user_language, str)
+            and bool(user_language.strip())
         )
 
         if created:
@@ -292,7 +300,7 @@ async def cmd_start(
                     legal_config.version,
                 )
 
-    if _should_show_start_language_gate(created):
+    if _should_show_start_language_gate(has_saved_language):
         await message.answer(
             l10n.get(START_LANGUAGE_CHOICE_TEXT_KEY),
             reply_markup=_create_start_language_keyboard(l10n),

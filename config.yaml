@@ -483,7 +483,7 @@ localization:
   # true = пользователи могут выбирать язык через команду /language.
   #
   # ВАЖНО: При enabled: false команда /language автоматически скрывается из меню.
-  enabled: false
+  enabled: true
 
   # Язык по умолчанию.
   # Используется если:

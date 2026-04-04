@@ -399,8 +399,11 @@ class AdaptiveSessionEngine:
         """Эмоции для мягкого входа на первых ходах."""
         return emotion_state in {
             EmotionState.ANXIETY,
+            EmotionState.CONFLICT,
             EmotionState.DECISION_FEAR,
             EmotionState.OVERLOAD,
+            EmotionState.REPEATING_PATTERN,
+            EmotionState.SELF_CRITICISM,
         }
 
     @staticmethod

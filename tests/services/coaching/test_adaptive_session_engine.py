@@ -1,5 +1,7 @@
 """Тесты для AdaptiveSessionEngine после pipeline-рефактора."""
 
+import pytest
+
 from src.services.coaching.adaptive_session_engine import (
     AdaptiveSessionEngine,
     EngineReplyType,
@@ -241,8 +243,8 @@ def test_first_turn_emotion_keeps_topic_definition_for_emotion_contact() -> None
     assert result.response_plan.step_type == "emotion_contact"
 
 
-def test_first_turn_pattern_input_keeps_structured_progression() -> None:
-    """Осознанный паттерновый вход остается в структурной ветке."""
+def test_first_turn_pattern_input_keeps_topic_definition_for_emotion_contact() -> None:
+    """Осознанный паттерновый вход на T1 удерживается в мягком emotion-contact."""
     engine = AdaptiveSessionEngine()
     state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
 
@@ -251,8 +253,33 @@ def test_first_turn_pattern_input_keeps_structured_progression() -> None:
         "Хочу понять, почему повторяется один и тот же сценарий.",
     )
 
-    assert result.state.stage == SessionStage.TENSION_REDUCTION
+    assert result.state.stage == SessionStage.TOPIC_DEFINITION
     assert result.request_type == RequestType.REPEATING_PATTERN
+    assert result.response_plan.step_type == "emotion_contact"
+
+
+@pytest.mark.parametrize("initial_question_count", [0, 1, 2])
+@pytest.mark.parametrize(
+    "user_text",
+    [
+        "У нас конфликт и ссора.",
+        "Я виню себя, я плохая.",
+        "Опять все по кругу, снова повторяется.",
+    ],
+)
+def test_early_conflict_self_criticism_repeating_pattern_hold_soft_entry_t1_t3(
+    initial_question_count: int,
+    user_text: str,
+) -> None:
+    """На T1-T3 для conflict/self-criticism/repeating-pattern не уходим рано в tension_reduction."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+    state.question_count = initial_question_count
+
+    result = engine.process_turn(state, user_text)
+
+    assert result.state.stage == SessionStage.TOPIC_DEFINITION
+    assert result.response_plan.step_type == "emotion_contact"
 
 
 def test_first_turn_worry_is_recognized_as_emotional_soft_entry() -> None:

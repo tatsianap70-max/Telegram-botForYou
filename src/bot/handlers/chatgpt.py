@@ -1,5 +1,6 @@
 """Обработчик команды /chatgpt — диалог с AI-моделями."""
 
+import os
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from uuid import uuid4
@@ -55,6 +56,12 @@ COACHING_RECENT_TURNS_KEY = "coaching_recent_user_turns"
 COACHING_LAST_PLAN_KEY = "coaching_last_response_plan"
 ONBOARDING_COMPLETED_KEY = "onboarding_completed"
 MAX_DOMAIN_REPLY_CHARS = 280
+RUNTIME_VERSION = (
+    os.getenv("APP_RUNTIME_COMMIT")
+    or os.getenv("GIT_COMMIT")
+    or os.getenv("APP_VERSION")
+    or "runtime-local"
+)
 
 
 def _compact_text(value: str) -> str:
@@ -210,6 +217,25 @@ async def _send_ai_response(message: Message, content: str) -> None:
     """Отправить ответ AI пользователю с typing indicator и разбиением на части."""
     await send_chat_action(message, GenerationType.CHAT)
     await send_long_message(message, content)
+
+
+def _log_runtime_response_marker(
+    coaching_state: SessionState,
+    response_plan: DomainResponsePlan,
+) -> None:
+    """Записать служебный runtime-маркер для диагностики расхождений окружений."""
+    logger.info(
+        (
+            "coaching_runtime_marker version=%s pid=%d question_count=%d "
+            "step_type=%s reply_type=%s should_complete=%s"
+        ),
+        RUNTIME_VERSION,
+        os.getpid(),
+        coaching_state.question_count,
+        response_plan.next_step_type,
+        response_plan.reply_type,
+        response_plan.should_complete,
+    )
 
 
 def _resolve_crisis_response_text(
@@ -410,6 +436,7 @@ async def handle_user_message(
             l10n,
             safety_decision.message_template_key,
         )
+        _log_runtime_response_marker(coaching_state, response_plan)
         await message.answer(crisis_text)
         await _persist_coaching_pipeline_state(
             state,
@@ -444,6 +471,7 @@ async def handle_user_message(
             user_text=message.text,
             response_plan=response_plan,
         )
+        _log_runtime_response_marker(coaching_state, response_plan)
         await _send_ai_response(message, domain_response)
     finally:
         await _persist_coaching_pipeline_state(

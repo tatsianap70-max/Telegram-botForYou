@@ -208,6 +208,47 @@ def _compose_domain_response(
             reflection_engine.next_question_prompt(coaching_state, user_text),
         )
 
+    if response_plan.reply_type == "coach_message":
+        step_templates: dict[str, tuple[str, str]] = {
+            "emotion_contact": (
+                "Похоже, в этом переживании может быть страх "
+                "потерять опору и контроль.",
+                "Что в этом переживается сильнее всего прямо сейчас?",
+            ),
+            "emotional_contact": (
+                "Похоже, в этом переживании может быть страх "
+                "потерять опору и контроль.",
+                "Что в этом переживается сильнее всего прямо сейчас?",
+            ),
+            "gentle_open": (
+                "Похоже, в этой ситуации тревога может усиливаться "
+                "из-за неопределенности.",
+                "С чего вам будет легче начать: с самого острого "
+                "переживания или с ближайшего шага?",
+            ),
+            "slowing": (
+                "Похоже, сейчас нагрузка может быть выше вашего текущего ресурса.",
+                "Что поможет вам прямо сейчас чуть выдохнуть?",
+            ),
+            "open_neutral": (
+                "Похоже, в этой теме может быть несколько узлов, которые пока смешаны.",
+                "Какой кусочек ситуации прояснить первым?",
+            ),
+            "reflect_light": (
+                "Похоже, в вашем описании уже может проступать "
+                "ключевая линия происходящего.",
+                "Что из этого сейчас самое опорное для вас?",
+            ),
+            "focus_soft": (
+                "Похоже, в этой ситуации может быть важна одна точка напряжения.",
+                "На чем в этой ситуации лучше сфокусироваться сначала?",
+            ),
+        }
+        template = step_templates.get(next_step_type)
+        if template is not None:
+            reflection, question = template
+            return _compose_compact_reply(reflection, question)
+
     short_reflection = reflection_engine.short_reflection(coaching_state, user_text)
     next_question = reflection_engine.next_question_prompt(coaching_state, user_text)
     return _compose_compact_reply(short_reflection, next_question)

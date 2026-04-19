@@ -259,6 +259,9 @@ class AdaptiveSessionEngine:
         if self._should_keep_t2_emotion_contact(state, context):
             self._set_step_type(state, context, "emotion_contact")
             return
+        if self._should_use_t2_structured_progress(state, context):
+            self._set_step_type(state, context, "structured_progress")
+            return
 
         if self._is_early_turn(state):
             if state.emotion_result.state == EmotionState.CONFUSION:
@@ -416,7 +419,37 @@ class AdaptiveSessionEngine:
             return False
         if context.request_type == RequestType.CONFUSION:
             return False
-        return not self._has_explicit_misunderstanding_marker(context.normalized_text)
+        if self._has_explicit_misunderstanding_marker(context.normalized_text):
+            return False
+        # На T2 после контакта не удерживаем тот же шаг, если пользователь
+        # уже ответил и не задает новый вопрос.
+        return not (
+            context.request_type == RequestType.SITUATION
+            and self._looks_like_direct_answer(context.normalized_text)
+        )
+
+    def _should_use_t2_structured_progress(
+        self,
+        state: SessionState,
+        context: _PipelineContext,
+    ) -> bool:
+        """После T1 emotion_contact на T2 прямой ответ переводим в progress-шаг."""
+        if state.question_count != 2:
+            return False
+        if not state.recent_step_types:
+            return False
+        if state.recent_step_types[-1] not in {"emotion_contact", "emotional_contact"}:
+            return False
+        if context.request_type != RequestType.SITUATION:
+            return False
+        if self._has_explicit_misunderstanding_marker(context.normalized_text):
+            return False
+        return self._looks_like_direct_answer(context.normalized_text)
+
+    @staticmethod
+    def _looks_like_direct_answer(normalized_text: str) -> bool:
+        """Определить простой прямой ответ пользователя на предыдущий вопрос."""
+        return "?" not in normalized_text
 
     @staticmethod
     def _has_explicit_misunderstanding_marker(normalized_text: str) -> bool:

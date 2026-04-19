@@ -271,7 +271,9 @@ def test_early_conflict_self_criticism_repeating_pattern_hold_soft_entry_t1_t3(
     initial_question_count: int,
     user_text: str,
 ) -> None:
-    """На T1-T3 для conflict/self-criticism/repeating-pattern не уходим рано в tension_reduction."""
+    """На T1-T3 для conflict/self-criticism/repeating-pattern
+    не уходим рано в tension_reduction.
+    """
     engine = AdaptiveSessionEngine()
     state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
     state.question_count = initial_question_count
@@ -337,6 +339,36 @@ def test_early_uncertainty_turn_two_does_not_complete_session() -> None:
     assert first.state.stage == SessionStage.TOPIC_DEFINITION
     assert second.reply_type == EngineReplyType.COACH_MESSAGE
     assert second.state.stage == SessionStage.TOPIC_DEFINITION
+    assert second.response_plan.step_type == "state_clarification"
+
+
+def test_t2_direct_answer_after_emotion_contact_moves_from_same_step() -> None:
+    """После T1 emotion_contact прямой ответ на T2 не должен
+    оставаться в том же шаге.
+    """
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+
+    first = engine.process_turn(state, "Я очень волнуюсь перед разговором.")
+    second = engine.process_turn(state, "Да, и то и другое.")
+
+    assert first.response_plan.step_type == "emotion_contact"
+    assert second.response_plan.step_type != "emotion_contact"
+    assert second.response_plan.step_type != "emotional_contact"
+
+
+def test_t2_confusion_after_emotion_contact_routes_to_clarification() -> None:
+    """Если на T2 есть явное непонимание, допускается переход
+    в state_clarification.
+    """
+    engine = AdaptiveSessionEngine()
+    state = _build_state(mode=SessionMode.FREE, topic_id="topic-1")
+
+    first = engine.process_turn(state, "Я очень волнуюсь перед разговором.")
+    second = engine.process_turn(state, "Не понимаю, что ты имеешь в виду.")
+
+    assert first.response_plan.step_type == "emotion_contact"
+    assert second.request_type == RequestType.CONFUSION
     assert second.response_plan.step_type == "state_clarification"
 
 

@@ -38,6 +38,7 @@ EMOTION_MARKERS: dict[EmotionState, tuple[str, ...]] = {
     EmotionState.OVERLOAD: ("перегруз", "выгор", "не тяну", "давит"),
     EmotionState.ANXIETY: (
         "тревог",
+        "тревожно",
         "боюсь",
         "страшно",
         "паник",

@@ -67,6 +67,8 @@ _CRISIS_MARKERS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+_KNOW_HOW_PATTERN = re.compile(r"\b(?:не\s+)?знаю\s*,?\s*как\b")
+
 
 def detect_crisis_markers(user_text: str) -> list[str]:
     """Определить сработавшие кризисные reason-коды по тексту пользователя."""
@@ -76,7 +78,14 @@ def detect_crisis_markers(user_text: str) -> list[str]:
 
     reason_codes: list[str] = []
     for reason_code, markers in _CRISIS_MARKERS.items():
-        if any(marker in normalized for marker in markers):
+        if any(
+            _contains_crisis_marker(
+                normalized_text=normalized,
+                reason_code=reason_code,
+                marker=marker,
+            )
+            for marker in markers
+        ):
             reason_codes.append(reason_code)
     return reason_codes
 
@@ -130,3 +139,22 @@ def build_crisis_response() -> str:
 def _normalize_text(text: str) -> str:
     """Нормализовать входной текст для policy-детекции маркеров."""
     return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _contains_crisis_marker(
+    normalized_text: str,
+    reason_code: str,
+    marker: str,
+) -> bool:
+    """Проверить маркер с точечной защитой от ложных срабатываний."""
+    if reason_code == "plan_means_timeframe" and marker == "знаю как":
+        return _contains_positive_know_how(normalized_text)
+    return marker in normalized_text
+
+
+def _contains_positive_know_how(normalized_text: str) -> bool:
+    """Распознать "знаю как", игнорируя форму "не знаю как"."""
+    for match in _KNOW_HOW_PATTERN.finditer(normalized_text):
+        if not match.group(0).startswith("не "):
+            return True
+    return False

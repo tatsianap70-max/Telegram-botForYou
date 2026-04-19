@@ -49,6 +49,24 @@ def test_plan_means_timeframe_returns_crisis_interrupt() -> None:
     assert "plan_means_timeframe" in decision.reason_codes
 
 
+def test_negated_know_how_does_not_trigger_crisis() -> None:
+    """Фраза "не знаю как" не должна считаться признаком плана/средства."""
+    decision = evaluate_safety("Мне тревожно, я не знаю как успокоиться и собраться.")
+
+    assert decision.level is SafetyLevel.SAFE
+    assert not should_interrupt_session(decision)
+    assert "plan_means_timeframe" not in decision.reason_codes
+
+
+def test_positive_know_how_still_triggers_crisis() -> None:
+    """Явная формулировка "знаю как" должна сохранять кризисный interrupt."""
+    decision = evaluate_safety("Я знаю, как это сделать сегодня ночью.")
+
+    assert decision.level is SafetyLevel.CRISIS
+    assert should_interrupt_session(decision)
+    assert "plan_means_timeframe" in decision.reason_codes
+
+
 def test_harm_to_others_returns_crisis_interrupt() -> None:
     """Намерение причинить вред другому должно давать crisis-решение."""
     decision = evaluate_safety("Я хочу причинить вред другому человеку.")

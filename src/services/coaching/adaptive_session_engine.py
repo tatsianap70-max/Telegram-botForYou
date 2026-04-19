@@ -256,6 +256,10 @@ class AdaptiveSessionEngine:
         if context.stop_processing:
             return
 
+        if self._should_keep_t2_emotion_contact(state, context):
+            self._set_step_type(state, context, "emotion_contact")
+            return
+
         if self._is_early_turn(state):
             if state.emotion_result.state == EmotionState.CONFUSION:
                 self._set_step_type(state, context, "state_clarification")
@@ -267,7 +271,11 @@ class AdaptiveSessionEngine:
         step_type = self._derive_step_type(state, context.request_type)
         if (
             self._is_early_turn(state)
-            and state.stage in {SessionStage.TOPIC_DEFINITION, SessionStage.TENSION_REDUCTION}
+            and state.stage
+            in {
+                SessionStage.TOPIC_DEFINITION,
+                SessionStage.TENSION_REDUCTION,
+            }
             and step_type == "clarity_structuring"
         ):
             step_type = "state_clarification"
@@ -393,6 +401,33 @@ class AdaptiveSessionEngine:
         state.no_progress_turns = 0
         recent = state.recent_step_types[-self._max_recent_steps :]
         state.recent_step_types = [*recent, step_type][-self._max_recent_steps :]
+
+    def _should_keep_t2_emotion_contact(
+        self,
+        state: SessionState,
+        context: _PipelineContext,
+    ) -> bool:
+        """На T2 после emotion_contact не уходить в clarification без явной путаницы."""
+        if state.question_count != 2:
+            return False
+        if not state.recent_step_types:
+            return False
+        if state.recent_step_types[-1] not in {"emotion_contact", "emotional_contact"}:
+            return False
+        if context.request_type == RequestType.CONFUSION:
+            return False
+        return not self._has_explicit_misunderstanding_marker(context.normalized_text)
+
+    @staticmethod
+    def _has_explicit_misunderstanding_marker(normalized_text: str) -> bool:
+        """Выделить явный сигнал непонимания без сложной дополнительной логики."""
+        extra_markers = (
+            "объясни",
+            "что ты имеешь в виду",
+        )
+        return AdaptiveSessionEngine._is_clarification_input(
+            normalized_text
+        ) or contains_any(normalized_text, extra_markers)
 
     @staticmethod
     def _is_early_emotional_state(emotion_state: EmotionState) -> bool:

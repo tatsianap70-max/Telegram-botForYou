@@ -256,11 +256,9 @@ class AdaptiveSessionEngine:
         if context.stop_processing:
             return
 
-        if self._should_keep_t2_emotion_contact(state, context):
-            self._set_step_type(state, context, "emotion_contact")
-            return
-        if self._should_use_t2_structured_progress(state, context):
-            self._set_step_type(state, context, "structured_progress")
+        forced_step_type = self._resolve_t2_t3_contact_step(state, context)
+        if forced_step_type is not None:
+            self._set_step_type(state, context, forced_step_type)
             return
 
         if self._is_early_turn(state):
@@ -293,6 +291,20 @@ class AdaptiveSessionEngine:
 
         state.recent_step_types = [*recent, step_type][-self._max_recent_steps :]
         context.step_type = step_type
+
+    def _resolve_t2_t3_contact_step(
+        self,
+        state: SessionState,
+        context: _PipelineContext,
+    ) -> str | None:
+        """Точечный override для ранних переходов после emotion_contact."""
+        if self._should_keep_t2_emotion_contact(state, context):
+            return "emotion_contact"
+        if self._should_use_t2_structured_progress(state, context):
+            return "structured_progress"
+        if self._should_keep_t3_emotion_contact(state, context):
+            return "emotion_contact"
+        return None
 
     def _load_limiter_stage(
         self, state: SessionState, context: _PipelineContext
@@ -445,6 +457,22 @@ class AdaptiveSessionEngine:
         if self._has_explicit_misunderstanding_marker(context.normalized_text):
             return False
         return self._looks_like_direct_answer(context.normalized_text)
+
+    def _should_keep_t3_emotion_contact(
+        self,
+        state: SessionState,
+        context: _PipelineContext,
+    ) -> bool:
+        """На T3 после T2 emotion_contact не уходить в clarification без путаницы."""
+        if state.question_count != 3:
+            return False
+        if not state.recent_step_types:
+            return False
+        if state.recent_step_types[-1] not in {"emotion_contact", "emotional_contact"}:
+            return False
+        if context.request_type == RequestType.CONFUSION:
+            return False
+        return not self._has_explicit_misunderstanding_marker(context.normalized_text)
 
     @staticmethod
     def _looks_like_direct_answer(normalized_text: str) -> bool:

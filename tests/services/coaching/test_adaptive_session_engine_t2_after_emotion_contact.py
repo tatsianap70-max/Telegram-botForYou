@@ -38,3 +38,31 @@ def test_t2_after_emotion_contact_with_confusion_uses_state_clarification() -> N
 
     assert first.response_plan.step_type == "emotion_contact"
     assert second.response_plan.step_type == "state_clarification"
+
+
+def test_t3_after_t1_t2_emotion_contact_does_not_go_to_state_clarification() -> None:
+    """После T1/T2 emotion_contact осмысленный T3 не уходит в clarification."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state()
+
+    first = engine.process_turn(state, "Мне тревожно перед разговором.")
+    second = engine.process_turn(state, "Что со мной происходит в этот момент?")
+    third = engine.process_turn(state, "Боюсь, что потеряю работу.")
+
+    assert first.response_plan.step_type == "emotion_contact"
+    assert second.response_plan.step_type == "emotion_contact"
+    assert third.response_plan.step_type != "state_clarification"
+
+
+def test_t3_after_t1_t2_emotion_contact_with_confusion_keeps_clarification() -> None:
+    """Если на T3 есть «не понимаю», state_clarification должен сохраняться."""
+    engine = AdaptiveSessionEngine()
+    state = _build_state()
+
+    first = engine.process_turn(state, "Мне тревожно перед разговором.")
+    second = engine.process_turn(state, "Что со мной происходит в этот момент?")
+    third = engine.process_turn(state, "Не понимаю, что ты имеешь в виду.")
+
+    assert first.response_plan.step_type == "emotion_contact"
+    assert second.response_plan.step_type == "emotion_contact"
+    assert third.response_plan.step_type == "state_clarification"
